@@ -1,0 +1,39 @@
+{
+  "name": "interplanetary-command",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only mission-control dashboard for Oxygen Not Included: Spaced Out! colonies via OniMcp.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "sim": "tsx scripts/simulator.ts",
+    "demo": "concurrently -k -n sim,web \"npm:sim\" \"cross-env ONI_MCP_URL=http://127.0.0.1:8789/mcp/ next dev -p 3000\"",
+    "probe": "tsx scripts/probe.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "next lint"
+  },
+  "engines": {
+    "node": ">=20.10"
+  },
+  "dependencies": {
+    "next": "^15.5.29",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^5.1.0"
+  }
+}
