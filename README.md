@@ -12,6 +12,12 @@ Leave the game running, glance at the second monitor, and know whether every ast
 - An alert engine (CRITICAL / WARNING / INFO) with hysteresis, acknowledge / dismiss, and an explanation, urgency and suggested actions for every alert.
 - Historical charts per asteroid, stored locally as JSON lines.
 - An optional Claude-powered **Colony Advisor** that briefs you from a structured snapshot.
+- **Remote Commander** — use it from your phone over a private Tailscale network:
+  - a phone-first status screen that shows colony health at a glance;
+  - a message thread with Claude, your Colony Operations Manager;
+  - strategic objectives with priorities 1–5, and operating modes;
+  - an AI operations panel, notifications (ntfy/webhook), and an honest home-PC / link status.
+  See [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md).
 - **Version 1 is strictly read-only.** The client cannot send `tools/call`, the only way OniMcp changes the game.
 
 > Screenshots in `docs/` show **demo mode** (the bundled simulator). Demo data is always labelled on screen.
@@ -34,8 +40,11 @@ run `npm run probe` after updating the mod (see below).
 ```bash
 npm install
 cp .env.example .env.local      # optional: edit settings
-npm run build && npm start      # → http://localhost:3000
+npm run setup                   # choose the commander passphrase (required to sign in)
+npm run build && npm start      # → http://localhost:3000 (bound to 127.0.0.1)
 ```
+
+For access from your phone, follow [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) (Tailscale; no port forwarding).
 
 1. Launch the game with the **ONI MCP Server** mod enabled and load a colony. OniMcp listens on `http://localhost:8788/mcp/` by default.
 2. Open <http://localhost:3000> on your second monitor (1920×1080 is the design target; any size works). Use the browser's fullscreen (F11).
@@ -58,8 +67,12 @@ Please report either one; the dashboard will show that metric as N/A instead of 
 ### Demo mode (no game needed)
 
 ```bash
+npm run setup:demo  # once: passphrase for the demo data directory
 npm run demo        # simulator on :8789 + dashboard on :3000
 ```
+
+In demo mode, commander instructions are handled by a deterministic **simulated interpreter** when no Claude key is
+set. Every reply it writes is labelled "SIMULATED interpreter — not Claude".
 
 The simulator speaks the same protocol as OniMcp and identifies itself as `OniMcp-Simulator`. Whenever the dashboard
 is connected to it, a purple **DEMO MODE — ALL VALUES ARE SIMULATED** banner is shown and the AI advisor is told the
@@ -77,6 +90,10 @@ Environment variables (`.env.local`):
 | `ONI_MCP_TOKEN` | — | Only if you enabled `AuthEnabled` in `OniMcpConfig.json` |
 | `ANTHROPIC_API_KEY` | — | Enables the AI Colony Advisor. Without it the advisor panel stays offline. |
 | `ADVISOR_MODEL` | `claude-opus-5-5` | Advisor model override |
+| `NTFY_URL`, `NTFY_TOKEN`, `IC_PUBLIC_URL` | — | Push notifications via ntfy (see REMOTE_ACCESS.md) |
+| `IC_WEBHOOK_URL` | — | Generic JSON webhook for notifications |
+| `IC_HEARTBEAT_URL` | — | Dead-man's-switch ping (e.g. healthchecks.io) so you're told when the home PC goes dark |
+| `OPS_MODEL` | `claude-opus-5-5` | Model for instruction interpretation and investigations |
 | `IC_DATA_DIR` | `./data` | History (`history/<save>/<date>.jsonl`) and alert state (`alerts.json`) |
 | `IC_HISTORY_INTERVAL_MS` | `30000` | How often a history sample is recorded while the game is unpaused |
 
@@ -96,10 +113,12 @@ npm run typecheck
 - [docs/ONIMCP_CAPABILITIES.md](docs/ONIMCP_CAPABILITIES.md) — what OniMcp exposes, which resources are used, and how the multi-asteroid question was answered.
 - [docs/ALERTS.md](docs/ALERTS.md) — every rule, threshold and the hysteresis model.
 - [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — limitations, unsupported metrics, and future work (v2–v4).
+- [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) — Tailscale setup, notifications, watchdog, security model.
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — commander/Claude model, instruction pipeline, objectives, modes, authorization levels.
 
 ## Safety
 
-The dashboard never issues game commands. In code, `src/lib/mcp/client.ts` permits only `initialize`,
+The dashboard never issues game commands — remote commander instructions change *strategy* (objectives, mode), never the game. In code, `src/lib/mcp/client.ts` permits only `initialize`,
 `notifications/initialized`, `ping`, `resources/list`, `resources/templates/list` and `resources/read`, and
 `src/lib/mcp/readonly.ts` restricts reads to an allowlist of verified read-only resources and filter-only query
 parameters. A test asserts that `tools/call` is rejected before any network I/O, and the integration test asserts the

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { readJsonFile, writeJsonFileAtomic } from "../store/history";
@@ -76,7 +76,8 @@ const MAX_MESSAGES = 500;
 const MAX_DECISIONS = 200;
 const MAX_NOTIFICATIONS = 300;
 
-export const newId = (prefix: string) => `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+export { newId } from "./ids";
+import { newId } from "./ids";
 
 /**
  * Durable operations state for the home agent.

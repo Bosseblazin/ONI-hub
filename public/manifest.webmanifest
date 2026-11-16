@@ -1,0 +1,14 @@
+{
+  "name": "Interplanetary Command",
+  "short_name": "Command",
+  "description": "Colony Operations and Intelligence System",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0d11",
+  "theme_color": "#0a0d11",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { use, useState } from "react";
 import { LineChart, type Series } from "@/components/charts";
-import { AlertPanel, Banners, Header, SevBadge, TrendArrow, worldSeverity } from "@/components/panels";
+import { AlertPanel, SevBadge, TrendArrow, worldSeverity } from "@/components/panels";
+import { useApp } from "@/components/shell";
 import { RESOURCE_LABELS } from "@/lib/model/normalize";
 import type { HistoryField, HistorySample, ResourceKey } from "@/lib/model/types";
 import { METRIC_GROUPS } from "@/lib/model/types";
 import { age, cycles, joules, kcal, kg, NA, pct, temp, watts, worldColor } from "@/lib/ui/format";
-import { useDashboard, useHistory, useNow } from "@/lib/ui/hooks";
+import { useHistory } from "@/lib/ui/hooks";
 
 const SLOT = ["var(--s1)", "var(--s2)", "var(--s3)"];
 const pts = (rows: HistorySample[], f: HistoryField) => rows.flatMap((r) => (typeof r[f] === "number" ? [{ x: r.c, y: r[f] as number }] : []));
@@ -17,8 +18,8 @@ const RANGES = [{ l: "3 cy", v: 3 }, { l: "10 cy", v: 10 }, { l: "30 cy", v: 30 
 export default function AsteroidPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const wid = Number(id);
-  const { state: s, linkUp } = useDashboard();
-  const now = useNow();
+  const { live, now } = useApp();
+  const s = live.dashboard;
   const [range, setRange] = useState<number | undefined>(10);
   const cur = s?.snapshot?.time?.estCycles;
   const rows = useHistory(Number.isInteger(wid) ? wid : null, 30_000, range !== undefined && cur !== undefined ? Math.floor(cur - range) : undefined);
@@ -27,8 +28,7 @@ export default function AsteroidPage({ params }: { params: Promise<{ id: string 
   if (!s) return <div className="p-8 text-sm text-muted">Connecting…</div>;
   if (!w) {
     return (
-      <div className="min-h-screen">
-        <Header s={s} now={now} linkUp={linkUp} />
+      <div>
         <div className="p-8 text-sm text-ink2">World {id} is not in the current world list. <Link href="/" className="text-accent underline">Back to overview</Link></div>
       </div>
     );
@@ -39,9 +39,7 @@ export default function AsteroidPage({ params }: { params: Promise<{ id: string 
   const p = w.power;
 
   return (
-    <div className="min-h-screen">
-      <Header s={s} now={now} linkUp={linkUp} />
-      <Banners s={s} />
+    <div>
       <main className="space-y-3 p-3">
         <div className="panel flex flex-wrap items-center gap-x-8 gap-y-2 px-4 py-3" style={{ borderTop: `3px solid ${worldColor(w.id)}` }}>
           <Link href="/" className="text-xs text-muted hover:text-ink2">← Overview</Link>

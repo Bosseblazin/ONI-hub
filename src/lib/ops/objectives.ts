@@ -1,6 +1,6 @@
 import { foodDemandRunway } from "../calc/trend";
 import type { AlertRecord, ColonySnapshot, Thresholds } from "../model/types";
-import { newId } from "./store";
+import { newId } from "./ids";
 import type { Criterion, CriterionMetric, Objective, ObjectiveStatus, OperatingMode, PriorityLevel } from "./types";
 
 export const CRITERION_METRICS: Record<CriterionMetric, { label: string; unit: string }> = {

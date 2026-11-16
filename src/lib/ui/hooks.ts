@@ -1,38 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { DashboardState, HistorySample } from "../model/types";
-
-/** Live dashboard state over SSE, with automatic reconnect. `linkUp` is the browser↔dashboard link. */
-export function useDashboard(): { state: DashboardState | null; linkUp: boolean } {
-  const [state, setState] = useState<DashboardState | null>(null);
-  const [linkUp, setLinkUp] = useState(false);
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-    const open = () => {
-      es = new EventSource("/api/stream");
-      es.addEventListener("state", (e) => {
-        try {
-          setState(JSON.parse((e as MessageEvent<string>).data) as DashboardState);
-          setLinkUp(true);
-        } catch {
-          /* ignore malformed frame */
-        }
-      });
-      es.onerror = () => {
-        setLinkUp(false);
-        es?.close();
-        retry = setTimeout(open, 3000);
-      };
-    };
-    open();
-    return () => {
-      es?.close();
-      if (retry) clearTimeout(retry);
-    };
-  }, []);
-  return { state, linkUp };
-}
+import type { HistorySample } from "../model/types";
 
 export function useHistory(worldId: number | null, refreshMs = 30_000, sinceCycles?: number): HistorySample[] {
   const [rows, setRows] = useState<HistorySample[]>([]);

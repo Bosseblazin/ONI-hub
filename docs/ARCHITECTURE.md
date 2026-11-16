@@ -144,3 +144,34 @@ adaptive thinking at `medium` effort, streaming `finalMessage()`, and server-sid
 - **Actions (v3):** would require a separate, explicitly enabled write client with per-action allowlists, dry-run →
   confirm → verify (OniMcp supports `dryRun` / `confirm`), human approval in the UI and an audit log. Deliberately
   absent from v1.
+
+## Remote Commander layer (v1.1)
+
+```
+ Phone / any tailnet device ──HTTPS (tailscale serve)──▶ Next.js server on the home PC (127.0.0.1:3000)
+   PWA shell, outbox (localStorage)                     ├─ auth (src/lib/auth): passphrase + sessions + guard
+   SSE /api/stream {dashboard, ops}                     ├─ /api/commands ──▶ OpsStore (idempotent queue, audit chain)
+                                                        └─ OperationsAgent (src/lib/ops/agent.ts)
+                                                             ├─ observes Collector state (no LLM): alert notifications,
+                                                             │  objective progress, auto-investigations, mode recommendations
+                                                             ├─ processes commands in order (instruction → Claude interpreter)
+                                                             ├─ investigations / reviews (Claude analyst, structured output)
+                                                             ├─ Notifier → in-app, ntfy, webhook;  Heartbeat → watchdog
+                                                             └─ home status: game process, OniMcp, Claude, heartbeat
+```
+
+- **Service graph:** `src/lib/server/singleton.ts` builds collector, store, auth, agent and notifier once per process,
+  started from `src/instrumentation.ts`. Monitoring, the agent and the command queue run regardless of connected browsers.
+- **Persistence (`data/ops/`):** `state.json` (objectives, mode, recommendations, proposals, decisions, settings),
+  `commands.jsonl`, `messages.jsonl`, `notifications.jsonl`, `audit.jsonl` (SHA-256 chained). `data/auth/` holds the
+  passphrase hash and hashed sessions.
+- **Claude:** `src/lib/ops/llm.ts` uses `client.beta.messages.parse` with zod structured outputs
+  (`betaZodOutputFormat`), adaptive thinking at medium effort, and server-side refusal fallback, under an hourly call
+  budget. `StructuredLlm` is an interface, so tests inject a scripted double and demo mode uses `SimulatedLlm`.
+  The simulated interpreter is only ever selected while connected to the simulator, and its output is always labelled.
+- **Client:** `src/lib/ui/live.ts` (SSE with auth redirect, last-known cache, link-state detection, durable outbox
+  with retries) and `src/components/shell.tsx` (desktop header and tabs; mobile top bar and bottom nav). Pages live in
+  the `src/app/(app)/` route group.
+- **Never pretend:** the server skips evaluation on stale data. The client separately reports "home PC unreachable",
+  "device offline", "game link down" and "monitoring interrupted"; while any of these holds, colony status is UNKNOWN
+  and badges are STALE.
