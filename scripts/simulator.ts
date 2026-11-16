@@ -9,7 +9,7 @@ import { OniSimulator } from "../src/lib/sim/simulator";
 
 const port = Number(process.env.SIM_PORT ?? 8789);
 const sim = new OniSimulator({
-  accel: Number(process.env.SIM_ACCEL ?? 10),
+  accel: Number(process.env.SIM_ACCEL ?? 6),
   scenario: process.env.SIM_SCENARIO === "healthy" ? "healthy" : "demo",
 });
 sim.listen(port).then(() => {

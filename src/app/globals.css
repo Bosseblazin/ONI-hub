@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Mission-control dark theme. Dark-only by design (second-monitor ops display). */
+:root {
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", ui-monospace, monospace;
+  color-scheme: dark;
+  --page: #0a0d11;
+  --panel: #11151b;
+  --panel-2: #171c24;
+  --line: #262d38;
+  --grid: #1e242d;
+  --axis: #343c48;
+  --ink: #e8eaed;
+  --ink-2: #b4bac4;
+  --muted: #7d8591;
+  --accent: #6fb3ff;
+  /* Status palette — reserved; always paired with an icon/label. */
+  --good: #0ca30c;
+  --warn: #fab219;
+  --serious: #ec835a;
+  --crit: #d03b3b;
+  /* Categorical identity slots (validated on --panel). */
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #0ca30c;
+  --s7: #9085e9;
+  --s8: #e66767;
+}
+
+html, body { background: var(--page); color: var(--ink); }
+body { font-feature-settings: "tnum" 1, "zero" 1; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.panel-title {
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); font-weight: 600;
+}
+.num { font-family: var(--font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.scanline { background-image: linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px); background-size: 100% 3px; }
+
+@keyframes ic-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.pulse { animation: ic-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #2a313c; border-radius: 4px; }

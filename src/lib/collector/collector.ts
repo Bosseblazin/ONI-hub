@@ -238,15 +238,21 @@ export class Collector extends EventEmitter {
       }
     } else for (const w of this.worlds.values()) this.fail(w, "vitals", this.failedUris.get("oni://dupes/vitals") ?? "unavailable");
 
+    for (const w of this.worlds.values()) w.settled = isSettled(w);
     // Medium tier: power, food, inventory for each world we care about.
     if (now - this.lastMedium >= this.o.mediumIntervalMs) {
       this.lastMedium = now;
-      for (const w of this.monitoredWorlds(now)) await this.readMedium(w, now);
+      for (const w of this.monitoredWorlds(now)) {
+        await this.readMedium(w, now);
+        w.settled = isSettled(w);
+      }
     }
     // Slow tier: full-grid scans (thermal, atmosphere, liquids). These are the expensive reads in-game.
-    if (now - this.lastSlow >= this.o.slowIntervalMs) {
-      this.lastSlow = now;
-      for (const w of this.monitoredWorlds(now)) await this.readSlow(w, now);
+    // A newly settled world gets its first slow read immediately rather than waiting a full interval.
+    const slowDue = now - this.lastSlow >= this.o.slowIntervalMs;
+    if (slowDue) this.lastSlow = now;
+    for (const w of this.worlds.values()) {
+      if (w.settled && (slowDue || w.meta.thermal.fetchedAt === null)) await this.readSlow(w, now);
     }
     if (now - this.lastResearch >= this.o.slowIntervalMs) {
       const r = await this.tryRead("oni://research/progress", ResearchProgressSchema);
@@ -288,7 +294,7 @@ export class Collector extends EventEmitter {
   private monitoredWorlds(now = Date.now()): WorldState[] {
     // Every world is read at least once (to learn whether it's settled); afterwards unsettled
     // worlds are only re-probed on the slow cadence via readMedium's power read.
-    return [...this.worlds.values()].filter((w) => w.settled || w.isActive || w.meta.power.fetchedAt === null || now - (w.meta.power.fetchedAt ?? 0) > 5 * 60_000);
+    return [...this.worlds.values()].filter((w) => isSettled(w) || w.isActive || w.meta.power.fetchedAt === null || now - (w.meta.power.fetchedAt ?? 0) > 5 * 60_000);
   }
 
   private async readMedium(w: WorldState, now: number): Promise<void> {

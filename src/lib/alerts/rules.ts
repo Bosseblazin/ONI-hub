@@ -361,7 +361,8 @@ function stockRule(rule: string, field: HistoryField, key: "coal" | "petroleum" 
         const runway = runwayFromTrend(cur, t);
         const isWater = key === "water";
         const limit = isWater ? ctx.th.waterRunwayWarningCycles : ctx.th.fuelRunwayWarningCycles;
-        const belowMin = isWater && w.population > 0 && cur < ctx.th.waterMinimumKg;
+        // Rocket interiors legitimately carry little or no water; only asteroids get the minimum check.
+        const belowMin = isWater && w.kind === "asteroid" && w.population > 0 && cur < ctx.th.waterMinimumKg;
         if ((runway === null || runway > limit) && !belowMin) return { scope: s, candidate: null };
         if (cur <= 0 && !belowMin) return { scope: s, candidate: null };
         return {

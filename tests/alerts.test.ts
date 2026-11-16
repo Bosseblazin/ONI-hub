@@ -104,9 +104,17 @@ describe("stock rules", () => {
   });
 });
 
+describe("rocket interiors", () => {
+  it("do not get the asteroid water-minimum warning", () => {
+    const w = world({ kind: "rocket" });
+    w.resources.water = { key: "water", stored: 0, free: 0, total: 0 };
+    expect(only(R.waterRule(ctx(snap([w]), { "0|water": { direction: "stable", slopePerCycle: 0 } })))).toHaveLength(0);
+  });
+});
+
 describe("informational events", () => {
   it("reports new worlds and generators only relative to a previous snapshot", () => {
-    const prev = snap([world({ power: { ...({} as never), generatorOperational: 1, generatorCount: 2 } as never })]);
+    const prev = snap([world({ power: { generatorOperational: 1, generatorCount: 2 } as never })]);
     const cur = snap([
       world({ power: { generatorOperational: 2, generatorCount: 2 } as never }),
       world({ id: 5, name: "New Rock", dupes: [], population: 0, settled: false }),

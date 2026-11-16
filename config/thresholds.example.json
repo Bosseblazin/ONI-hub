@@ -1,0 +1,16 @@
+{
+  "foodRunwayCriticalCycles": 3,
+  "foodRunwayWarningCycles": 6,
+  "kcalPerDupePerCycle": 1000,
+  "oxygenKgPerDupeCritical": 10,
+  "oxygenKgPerDupeWarning": 40,
+  "batteryCriticalPct": 5,
+  "batteryWarningPct": 20,
+  "waterRunwayWarningCycles": 10,
+  "waterMinimumKg": 2000,
+  "fuelRunwayWarningCycles": 5,
+  "temperatureWarningC": 60,
+  "temperatureCriticalC": 75,
+  "stressWarningPct": 60,
+  "stressCriticalPct": 85
+}

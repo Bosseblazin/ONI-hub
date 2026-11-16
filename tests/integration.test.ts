@@ -67,6 +67,11 @@ describe("Collector end-to-end", () => {
     expect(terra.resources.water.stored).toBeGreaterThan(0);
     expect(s.worlds.find((w) => w.id === 2)!.kind).toBe("rocket");
     expect(s.worlds.find((w) => w.id === 3)!.settled).toBe(false);
+    // Regression: every settled world gets its grid scans on the very first pass, not only the active one.
+    for (const w of s.worlds.filter((x) => x.settled)) {
+      expect(w.meta.thermal.fetchedAt, `thermal for ${w.name}`).not.toBeNull();
+      expect(w.atmosphere, `atmosphere for ${w.name}`).not.toBeNull();
+    }
     // Per-asteroid food runway must not use OniMcp's global-population figure
     const outpost = s.worlds.find((w) => w.id === 1)!;
     expect(outpost.population).toBe(3);
