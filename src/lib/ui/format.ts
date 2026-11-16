@@ -40,6 +40,7 @@ export function temp(n: number | null | undefined): string {
 export function cycles(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return NA;
   if (n >= 100) return "100+ cy";
+  if (n < 0.05) return "now";
   return `${n.toFixed(n < 10 ? 1 : 0)} cy`;
 }
 

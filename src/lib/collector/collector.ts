@@ -181,11 +181,13 @@ export class Collector extends EventEmitter {
     const newColony = this.snapshot !== null && this.snapshot.saveName !== saveName;
     if (newColony || this.snapshot === null) {
       this.history.open(saveName);
+      const all = this.history.all();
+      if (newColony) this.clock.reset();
+      this.clock.seed(all.length ? all[all.length - 1]!.c : null);
       if (newColony) {
         this.alerts.resetForNewColony();
         this.worlds.clear();
         this.caches.clear();
-        this.clock.reset();
         this.prevSnapshot = null;
       }
     }
@@ -283,8 +285,9 @@ export class Collector extends EventEmitter {
 
     // History: only while the game clock is running, so pauses don't flatten trends.
     if (!status.isPaused && now - this.lastHistory >= this.o.historyIntervalMs) {
+      const since = this.lastHistory === 0 ? -Infinity : this.lastHistory;
       this.lastHistory = now;
-      this.history.append(this.snapshot.worlds.filter((w) => w.settled).map((w) => toHistorySample(w, now, clock.estCycles)));
+      this.history.append(this.snapshot.worlds.filter((w) => w.settled).map((w) => toHistorySample(w, now, clock.estCycles, since)));
     }
     this.recompute(now);
   }

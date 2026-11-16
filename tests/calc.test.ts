@@ -90,3 +90,44 @@ describe("GameClock", () => {
     expect(r.estCycles).toBe(40);
   });
 });
+
+describe("toHistorySample freshness", () => {
+  it("nulls metrics that were not re-read since the previous sample", async () => {
+    const { toHistorySample } = await import("@/lib/model/normalize");
+    const { world, NOW } = await import("./fixtures");
+    const w = world({ foodKcal: 1234 });
+    w.meta.atmosphere = { fetchedAt: NOW - 60_000, error: null };
+    const s = toHistorySample(w, NOW, 10, NOW - 30_000);
+    expect(s.kcal).toBe(1234); // food fetched at NOW
+    expect(s.o2).toBeNull(); // atmosphere is older than the previous sample
+    expect(toHistorySample(w, NOW, 10).o2).toBe(5000); // first sample keeps everything
+  });
+});
+
+describe("computeTrend window extension", () => {
+  it("extends the window for sparsely sampled metrics", () => {
+    // one reading every 0.6 cycles → only 5 inside a 3-cycle window
+    const s = Array.from({ length: 12 }, (_, i) => sample(100 + i * 0.6, 1000 - i * 0.6 * 30));
+    const t = computeTrend(s, "kcal", 0, TH);
+    expect(t.reliable).toBe(true);
+    expect(t.samples).toBe(12);
+    expect(t.slopePerCycle).toBeCloseTo(-30, 3);
+  });
+  it("ignores readings older than 4x the window", () => {
+    const s = [sample(0, 1), ...Array.from({ length: 3 }, (_, i) => sample(100 + i, 5))];
+    expect(computeTrend(s, "kcal", 0, TH).samples).toBe(3);
+  });
+});
+
+describe("GameClock seed", () => {
+  it("starts from stored history inside the current cycle, so time never runs backwards after a restart", () => {
+    const c = new GameClock();
+    c.seed(148.3);
+    expect(c.update({ cycle: 148, speed: 1, paused: false, wallMs: 0 }).estCycles).toBe(148.3);
+  });
+  it("ignores a seed from another cycle", () => {
+    const c = new GameClock();
+    c.seed(140.5);
+    expect(c.update({ cycle: 148, speed: 1, paused: false, wallMs: 0 }).estCycles).toBe(148);
+  });
+});

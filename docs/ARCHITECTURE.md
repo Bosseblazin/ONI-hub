@@ -89,7 +89,7 @@ History is **not recorded while paused**.
 
 ### Trends and projections (`src/lib/calc/trend.ts`)
 
-Least-squares fit over the trailing `trendWindowCycles` (3) of game time. A trend is only "reliable" with ≥ 6 samples
+Least-squares fit over the trailing `trendWindowCycles` (3) of game time, extended back (up to 4× the window) to include at least 12 real readings for slowly refreshed metrics. A trend is only "reliable" with ≥ 6 samples
 spanning ≥ 0.25 unpaused cycles; otherwise it is reported as `unknown` with the reason. "Stable" = projected change per
 cycle within 2 % of the mean level. Runway = current ÷ −slope, only for a reliable decreasing trend. Confidence:
 `high` (≥ 1.5 cycles, R² ≥ 0.8), `medium` (≥ 0.5, R² ≥ 0.5), else `low`.

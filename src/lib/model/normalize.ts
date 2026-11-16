@@ -203,31 +203,40 @@ export function isSettled(w: Pick<WorldState, "population" | "power">): boolean 
   return !!p && p.generatorCount + p.batteryCount + p.consumerCount > 0;
 }
 
-export function toHistorySample(w: WorldState, t: number, c: number): HistorySample {
+/**
+ * Build a history row. Metrics whose group was not re-read since `freshSince` are written as null, so a slow
+ * metric (e.g. a 60 s grid scan) isn't repeated across several 10-30 s samples — trend sample counts then
+ * reflect distinct readings, not copies.
+ */
+export function toHistorySample(w: WorldState, t: number, c: number, freshSince = -Infinity): HistorySample {
+  const ok = (g: MetricGroup) => (w.meta[g].fetchedAt ?? -Infinity) > freshSince;
+  const f = <T,>(g: MetricGroup, v: T): T | null => (ok(g) ? v : null);
   const r = w.resources;
+  const inv = ok("inventory") || ok("liquid") || ok("atmosphere");
+  const ri = <T,>(v: T): T | null => (inv ? v : null);
   return {
     t,
     c,
     w: w.id,
     pop: w.population,
-    kcal: w.foodKcal,
-    o2: w.atmosphere?.oxygenKg ?? null,
-    co2: w.atmosphere?.co2Kg ?? null,
-    water: r.water.total,
-    dirtyWater: r.pollutedWater.total,
-    coal: r.coal.total,
-    petroleum: r.petroleum.total,
-    crude: r.crudeOil.total,
-    gas: r.naturalGas.total,
-    metal: r.refinedMetal.total,
-    stone: r.buildingStone.total,
-    plastic: r.plastic.total,
-    battPct: w.power?.batteryPct ?? null,
-    battJ: w.power ? w.power.batteryStoredJ : null,
-    genW: w.power?.generatorRatedW ?? null,
-    useW: w.power?.consumerUsedW ?? null,
-    needW: w.power?.consumerNeededW ?? null,
-    avgT: w.thermal?.avgC ?? null,
-    maxT: w.thermal?.maxC ?? null,
+    kcal: f("food", w.foodKcal),
+    o2: f("atmosphere", w.atmosphere?.oxygenKg ?? null),
+    co2: f("atmosphere", w.atmosphere?.co2Kg ?? null),
+    water: ri(r.water.total),
+    dirtyWater: ri(r.pollutedWater.total),
+    coal: ri(r.coal.total),
+    petroleum: ri(r.petroleum.total),
+    crude: ri(r.crudeOil.total),
+    gas: ri(r.naturalGas.total),
+    metal: ri(r.refinedMetal.total),
+    stone: ri(r.buildingStone.total),
+    plastic: ri(r.plastic.total),
+    battPct: f("power", w.power?.batteryPct ?? null),
+    battJ: f("power", w.power ? w.power.batteryStoredJ : null),
+    genW: f("power", w.power?.generatorRatedW ?? null),
+    useW: f("power", w.power?.consumerUsedW ?? null),
+    needW: f("power", w.power?.consumerNeededW ?? null),
+    avgT: f("thermal", w.thermal?.avgC ?? null),
+    maxT: f("thermal", w.thermal?.maxC ?? null),
   };
 }

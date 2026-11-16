@@ -24,11 +24,23 @@ export class GameClock {
 
   constructor(private readonly maxGapMs = 60_000) {}
 
+  private seedValue: number | null = null;
+
+  /**
+   * Lower bound for the very first estimate, e.g. the last recorded history sample after a dashboard
+   * restart, so time never runs backwards relative to stored history. Ignored if outside the current cycle.
+   */
+  seed(minEstCycles: number | null): void {
+    this.seedValue = minEstCycles;
+  }
+
   /** Returns the estimated fractional cycle count and whether a discontinuity was detected. */
   update(s: ClockSample): { estCycles: number; discontinuity: boolean } {
     let discontinuity = false;
     if (this.est === null || this.lastCycle === null || this.lastWall === null) {
-      this.est = s.cycle; // start of the reported cycle (conservative)
+      // Start of the reported cycle (conservative), or the seed if it lies inside this cycle.
+      const sd = this.seedValue;
+      this.est = sd !== null && sd >= s.cycle && sd < s.cycle + 1 ? sd : s.cycle;
     } else if (s.cycle < this.lastCycle) {
       // Cycle went backwards: different save loaded or a reload.
       discontinuity = true;
@@ -52,6 +64,7 @@ export class GameClock {
 
   reset(): void {
     this.est = null;
+    this.seedValue = null;
     this.lastWall = null;
     this.lastCycle = null;
     this.lastSpeed = 0;

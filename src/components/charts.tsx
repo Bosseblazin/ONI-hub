@@ -23,6 +23,19 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return out;
 }
 
+/** Place series end labels in the right gutter, nudged apart so they never overlap (min 12px). */
+function endLabels(series: Series[], sy: (y: number) => number, top: number, bottom: number) {
+  const ls = series
+    .filter((s) => s.points.length)
+    .map((s) => ({ key: s.key, label: s.label, y: sy(s.points[s.points.length - 1]!.y) }))
+    .sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ls.length; i++) if (ls[i]!.y - ls[i - 1]!.y < 12) ls[i]!.y = ls[i - 1]!.y + 12;
+  const over = ls.length ? ls[ls.length - 1]!.y - bottom : 0;
+  if (over > 0) for (const l of ls) l.y -= over;
+  for (const l of ls) l.y = Math.max(top, l.y);
+  return ls;
+}
+
 /** Tiny trend line for cards. Not interactive beyond a native title. */
 export function Sparkline({ points, color, width = 120, height = 28, label }: { points: { x: number; y: number }[]; color: string; width?: number; height?: number; label: string }) {
   if (points.length < 2) {
@@ -68,8 +81,10 @@ export function LineChart({
 }) {
   const ref = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = height, padL = 58, padR = 92, padT = 10, padB = 24;
-  const all = series.flatMap((s) => s.points);
+  const W = 640, H = height, padL = 74, padR = 96, padT = 10, padB = 24;
+  const sorted = useMemo(() => series.map((s) => ({ ...s, points: [...s.points].sort((a, b) => a.x - b.x) })), [series]);
+  series = sorted;
+  const all = useMemo(() => series.flatMap((s) => s.points), [series]);
   const has = all.length >= 2;
 
   const g = useMemo(() => {
@@ -125,7 +140,7 @@ export function LineChart({
       </div>
       <div className="relative">
         <svg ref={ref} viewBox={`0 0 ${W} ${H}`} className="w-full" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img" aria-label={title}>
-          {g.yt.map((t) => (
+          {g.yt.filter((t, i, arr) => i === 0 || format(t) !== format(arr[i - 1]!)).map((t) => (
             <g key={t}>
               <line x1={padL} x2={W - padR} y1={g.sy(t)} y2={g.sy(t)} stroke="var(--grid)" strokeWidth={1} />
               <text x={padL - 6} y={g.sy(t) + 3.5} textAnchor="end" fontSize={10} fill="var(--muted)" className="num">{format(t)}</text>
@@ -139,16 +154,12 @@ export function LineChart({
           {series.map((s) => {
             if (s.points.length < 1) return null;
             const d = s.points.map((p, i) => `${i ? "L" : "M"}${g.sx(p.x).toFixed(1)},${g.sy(p.y).toFixed(1)}`).join("");
-            const last = s.points[s.points.length - 1]!;
-            return (
-              <g key={s.key}>
-                <path d={d} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-                {series.length <= 3 && (
-                  <text x={g.sx(last.x) + 6} y={g.sy(last.y) + 3.5} fontSize={10} fill="var(--ink-2)">{s.label}</text>
-                )}
-              </g>
-            );
+            return <path key={s.key} d={d} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />;
           })}
+          {series.length <= 3 &&
+            endLabels(series, g.sy, padT + 4, H - padB).map((l) => (
+              <text key={l.key} x={W - padR + 6} y={l.y + 3.5} fontSize={10} fill="var(--ink-2)">{l.label}</text>
+            ))}
           {hx !== null && (
             <g pointerEvents="none">
               <line x1={hx} x2={hx} y1={padT} y2={H - padB} stroke="var(--ink-2)" strokeWidth={1} strokeDasharray="3 3" />

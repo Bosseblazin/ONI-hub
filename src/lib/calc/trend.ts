@@ -39,11 +39,15 @@ export function computeTrend(
   };
   const ws = samples.filter((s) => s.w === worldId);
   const latest = ws.length ? ws[ws.length - 1]!.c : 0;
-  const pts: Point[] = [];
+  const all: Point[] = [];
   for (const s of ws) {
     const v = s[field];
-    if (typeof v === "number" && Number.isFinite(v) && s.c >= latest - th.trendWindowCycles) pts.push({ c: s.c, v });
+    if (typeof v === "number" && Number.isFinite(v) && s.c >= latest - th.trendWindowCycles * 4) all.push({ c: s.c, v });
   }
+  // Use the trailing window; if a slowly-refreshed metric has too few readings in it, extend back
+  // (up to 4x the window) to include at least 2 x trendMinSamples real readings.
+  let pts = all.filter((p) => p.c >= latest - th.trendWindowCycles);
+  if (pts.length < th.trendMinSamples * 2) pts = all.slice(-th.trendMinSamples * 2);
   const span = pts.length ? pts[pts.length - 1]!.c - pts[0]!.c : 0;
   const out = { ...base, samples: pts.length, spanCycles: span };
   if (pts.length < th.trendMinSamples) {
