@@ -175,3 +175,15 @@ adaptive thinking at `medium` effort, streaming `finalMessage()`, and server-sid
 - **Never pretend:** the server skips evaluation on stale data. The client separately reports "home PC unreachable",
   "device offline", "game link down" and "monitoring interrupted"; while any of these holds, colony status is UNKNOWN
   and badges are STALE.
+
+## Cloud deployment (v1.2)
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full picture. The code splits along one seam, `src/lib/server/backend.ts`:
+
+- **`LocalBackend`**: the original architecture. This process *is* the home PC (collector + agent in-process).
+- **`CloudBackend`**: a stateless Vercel function. State lives in Postgres (`src/lib/cloud/store.ts`; Neon in production, PGlite for dev and tests). It never starts monitoring: `src/instrumentation.ts` skips the home service graph when `IC_MODE=cloud`.
+- **Relay protocol** (`src/lib/relay/protocol.ts`): the home agent POSTs `/api/agent/sync` (HMAC-signed, gzip body). Each request carries a snapshot (when someone is watching, or every 30 s), new history rows, command receipts and status changes. The response returns queued commands, the history cursor and whether a viewer is active (which switches the cadence between 2 s and 10 s).
+- **Home agent** (`scripts/home-agent.ts`, `src/lib/relay/client.ts`): the same collector, Operations Agent and store as local mode, plus the outbound `RelayClient` with exponential back-off (max 30 s).
+- **Client** (`src/lib/ui/live.ts`): polls `/api/state` every 3 s (20 s when hidden). Link states: `live`, `home-offline` (cloud OK, agent silent for 45 s), `service-unreachable`, `device-offline`. The SSE stream was removed: Vercel functions can't hold long-lived connections, and iOS suspends background tabs anyway.
+- **Command lifecycle** (cloud): phone outbox → `ic_commands` (queued) → delivered → home `received` → `processing` → `completed`/`failed`/`deferred`. Only the home agent sets the last three.
+- The direct `/api/advisor` endpoint was replaced by the `report.request` command, so Claude (and its key) live only on the home PC.

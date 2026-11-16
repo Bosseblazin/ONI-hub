@@ -2,33 +2,49 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DashboardState } from "../model/types";
 import type { CommandType, OpsState } from "../ops/types";
+import type { RelayCommandStatus, RelayStatus } from "../relay/protocol";
 
-export type LinkState = "connecting" | "live" | "home-unreachable" | "device-offline";
+/**
+ * - live: fresh data from the home agent
+ * - home-offline: the service answers but the home agent has stopped syncing (PC off, asleep, agent stopped, home internet down)
+ * - service-unreachable: this device cannot reach the dashboard service (Vercel or the local server)
+ * - device-offline: this device has no network
+ */
+export type LinkState = "connecting" | "live" | "home-offline" | "service-unreachable" | "device-offline";
 
 export interface LiveData {
   dashboard: DashboardState | null;
   ops: OpsState | null;
+  relay: RelayStatus | null;
+  relayCommands: RelayCommandStatus[];
   link: LinkState;
-  /** Wall-clock ms of the last message received from the home PC (this device's view). */
+  /** When this device last received a response from the service. */
   lastSyncAt: number | null;
-  /** True when showing a cached copy because the home PC can't be reached. */
+  /** True when showing a cached copy because the service can't be reached. */
   fromCache: boolean;
+}
+
+interface StatePayload {
+  dashboard: DashboardState | null;
+  ops: OpsState | null;
+  relay: RelayStatus;
+  relayCommands: RelayCommandStatus[];
 }
 
 const CACHE_KEY = "ic:last-state";
 
-function loadCache(): { at: number; dashboard: DashboardState; ops: OpsState } | null {
+function loadCache(): ({ at: number } & StatePayload) | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
-    return raw ? (JSON.parse(raw) as { at: number; dashboard: DashboardState; ops: OpsState }) : null;
+    return raw ? (JSON.parse(raw) as { at: number } & StatePayload) : null;
   } catch {
     return null;
   }
 }
 
-function saveCache(dashboard: DashboardState, ops: OpsState) {
+function saveCache(p: StatePayload) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), dashboard, ops }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), ...p }));
   } catch {
     /* storage full / private mode — non-essential */
   }
@@ -39,81 +55,78 @@ function toLogin() {
   window.location.href = `/login?next=${next}`;
 }
 
+const VISIBLE_MS = 3000;
+const HIDDEN_MS = 20_000;
+
 /**
- * Live state from the home PC over SSE. Redirects to /login when the session is missing or revoked.
- * If the home PC becomes unreachable, keeps showing the last known state, clearly flagged as such.
+ * Live state by polling /api/state (works identically on Vercel and on the home server, and survives
+ * iOS Safari suspending background tabs). Redirects to /login on 401. Keeps showing the last known state,
+ * clearly flagged, when the service or the home PC is unreachable.
  */
 export function useLive(): LiveData {
-  const [d, setD] = useState<LiveData>({ dashboard: null, ops: null, link: "connecting", lastSyncAt: null, fromCache: false });
+  const [d, setD] = useState<LiveData>({ dashboard: null, ops: null, relay: null, relayCommands: [], link: "connecting", lastSyncAt: null, fromCache: false });
   useEffect(() => {
-    let es: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inflight = false;
     const cached = loadCache();
-    if (cached) setD({ dashboard: cached.dashboard, ops: cached.ops, link: "connecting", lastSyncAt: cached.at, fromCache: true });
+    if (cached) setD({ dashboard: cached.dashboard, ops: cached.ops, relay: cached.relay, relayCommands: cached.relayCommands ?? [], link: "connecting", lastSyncAt: cached.at, fromCache: true });
 
-    const lost = async () => {
+    const schedule = () => {
       if (stopped) return;
-      let link: LinkState = "home-unreachable";
-      if (typeof navigator !== "undefined" && navigator.onLine === false) link = "device-offline";
-      else {
-        try {
-          const r = await fetch("/api/auth/session", { cache: "no-store" });
-          if (r.ok) {
-            const s = (await r.json()) as { authenticated: boolean };
-            if (!s.authenticated) return toLogin();
-            link = "connecting"; // server reachable; the stream will reopen
-          }
-        } catch {
-          /* unreachable */
-        }
-      }
-      setD((p) => ({ ...p, link, fromCache: link !== "connecting" ? true : p.fromCache }));
-      retry = setTimeout(open, link === "connecting" ? 1000 : 5000);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(poll, document.visibilityState === "visible" ? VISIBLE_MS : HIDDEN_MS);
     };
 
-    const open = async () => {
-      if (stopped) return;
+    const poll = async () => {
+      if (stopped || inflight) return;
+      inflight = true;
       try {
-        const r = await fetch("/api/auth/session", { cache: "no-store" });
-        const s = (await r.json()) as { authenticated: boolean };
-        if (!s.authenticated) return toLogin();
+        const r = await fetch("/api/state", { cache: "no-store" });
+        if (r.status === 401) return toLogin();
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const p = (await r.json()) as StatePayload;
+        saveCache(p);
+        setD({
+          dashboard: p.dashboard,
+          ops: p.ops,
+          relay: p.relay,
+          relayCommands: p.relayCommands ?? [],
+          link: p.relay.agentOnline && p.dashboard ? "live" : "home-offline",
+          lastSyncAt: Date.now(),
+          fromCache: false,
+        });
       } catch {
-        return lost();
+        const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+        setD((x) => ({ ...x, link: offline ? "device-offline" : "service-unreachable", fromCache: true }));
+      } finally {
+        inflight = false;
+        schedule();
       }
-      es = new EventSource("/api/stream");
-      es.addEventListener("state", (e) => {
-        try {
-          const { dashboard, ops } = JSON.parse((e as MessageEvent<string>).data) as { dashboard: DashboardState; ops: OpsState };
-          saveCache(dashboard, ops);
-          setD({ dashboard, ops, link: "live", lastSyncAt: Date.now(), fromCache: false });
-        } catch {
-          /* malformed frame */
-        }
-      });
-      es.addEventListener("auth", () => toLogin());
-      es.onerror = () => {
-        es?.close();
-        void lost();
-      };
     };
-    void open();
-    const onOnline = () => {
-      if (retry) clearTimeout(retry);
-      es?.close();
-      void open();
+
+    void poll();
+    const wake = () => {
+      if (document.visibilityState === "visible") void poll();
+      else schedule();
     };
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", () => setD((p) => ({ ...p, link: "device-offline", fromCache: true })));
+    const offline = () => setD((x) => ({ ...x, link: "device-offline", fromCache: true }));
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("offline", offline);
+    window.addEventListener("focus", wake);
     return () => {
       stopped = true;
-      es?.close();
-      if (retry) clearTimeout(retry);
-      window.removeEventListener("online", onOnline);
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("focus", wake);
     };
   }, []);
   return d;
 }
+
 
 /* ------------------------------------------------------------- command outbox */
 

@@ -1,5 +1,5 @@
-import { guard, isResponse } from "@/lib/server/guard";
-import { home } from "@/lib/server/singleton";
+import { backend } from "@/lib/server/backend";
+import { guard, isResponse, noStore } from "@/lib/server/guard";
 import type { CommandType } from "@/lib/ops/types";
 
 export const dynamic = "force-dynamic";
@@ -11,12 +11,12 @@ const TYPES = new Set<CommandType>([
 ]);
 
 /**
- * Submit a command to the home agent. Idempotent: the client generates `clientId` once and re-sends it
- * on every retry; a repeated id returns the original command (HTTP 200, duplicate: true) and is never
- * processed twice.
+ * Submit a command. Idempotent on the client-generated `clientId`: a retry returns the original
+ * (HTTP 200, duplicate: true) and is never processed twice. In cloud mode a 202 means "queued in the
+ * relay"; whether the HOME AGENT received/processed it is reported separately (status.homeStatus).
  */
 export async function POST(req: Request) {
-  const g = guard(req, { write: true });
+  const g = await guard(req, { write: true });
   if (isResponse(g)) return g;
   const raw = await req.text();
   if (raw.length > 16_384) return Response.json({ error: "payload too large" }, { status: 413 });
@@ -30,24 +30,16 @@ export async function POST(req: Request) {
   if (typeof body.type !== "string" || !TYPES.has(body.type as CommandType)) return Response.json({ error: "unknown command type" }, { status: 400 });
   const payload = body.payload && typeof body.payload === "object" && !Array.isArray(body.payload) ? (body.payload as Record<string, unknown>) : {};
   if (body.type === "instruction" && (typeof payload.text !== "string" || !payload.text.trim())) return Response.json({ error: "instruction text required" }, { status: 400 });
-  const r = home().agent.submit({
-    clientId: body.clientId,
-    type: body.type as CommandType,
-    payload,
-    issuedBy: g.label,
-    clientCreatedAt: typeof body.clientCreatedAt === "number" ? body.clientCreatedAt : null,
-  });
-  return Response.json({ ack: true, duplicate: r.duplicate, command: r.command }, { status: r.duplicate ? 200 : 202 });
+  const b = backend();
+  const r = await b.submit({ clientId: body.clientId, type: body.type as CommandType, payload, issuedBy: g.label, clientCreatedAt: typeof body.clientCreatedAt === "number" ? body.clientCreatedAt : null });
+  return Response.json({ ack: true, mode: b.mode, duplicate: r.duplicate, seq: r.seq, command: r.status }, { status: r.duplicate ? 200 : 202 });
 }
 
-export function GET(req: Request) {
-  const g = guard(req);
+export async function GET(req: Request) {
+  const g = await guard(req);
   if (isResponse(g)) return g;
   const id = new URL(req.url).searchParams.get("clientId");
-  const h = home();
-  if (id) {
-    const c = h.store.getCommand(id);
-    return c ? Response.json(c) : Response.json({ error: "not found" }, { status: 404 });
-  }
-  return Response.json(h.store.recentCommands(100), { headers: { "Cache-Control": "no-store" } });
+  if (!id) return Response.json({ error: "clientId required" }, { status: 400 });
+  const c = await backend().command(id);
+  return c ? Response.json(c, { headers: noStore }) : Response.json({ error: "not found" }, { status: 404 });
 }

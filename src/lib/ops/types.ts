@@ -317,6 +317,8 @@ export interface HomeStatus {
   lastHeartbeatAt: number | null;
   heartbeatConfigured: boolean;
   remoteAccess: { passphraseSet: boolean; sessions: number };
+  /** Outbound link to the cloud relay (cloud deployments only). */
+  relay: { url: string; connected: boolean; lastSyncAt: number | null; lastError: string | null; consecutiveFailures: number } | null;
   serverTime: number;
 }
 

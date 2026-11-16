@@ -12,12 +12,13 @@ Leave the game running, glance at the second monitor, and know whether every ast
 - An alert engine (CRITICAL / WARNING / INFO) with hysteresis, acknowledge / dismiss, and an explanation, urgency and suggested actions for every alert.
 - Historical charts per asteroid, stored locally as JSON lines.
 - An optional Claude-powered **Colony Advisor** that briefs you from a structured snapshot.
-- **Remote Commander** — use it from your phone over a private Tailscale network:
+- **Remote Commander** — use it from any device through **one permanent Vercel URL**:
   - a phone-first status screen that shows colony health at a glance;
   - a message thread with Claude, your Colony Operations Manager;
   - strategic objectives with priorities 1–5, and operating modes;
   - an AI operations panel, notifications (ntfy/webhook), and an honest home-PC / link status.
-  See [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md).
+  The home PC connects *outbound* to the deployment; OniMcp is never exposed.
+  See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md).
 - **Version 1 is strictly read-only.** The client cannot send `tools/call`, the only way OniMcp changes the game.
 
 > Screenshots in `docs/` show **demo mode** (the bundled simulator). Demo data is always labelled on screen.
@@ -30,12 +31,19 @@ Leave the game running, glance at the second monitor, and know whether every ast
 |---|---|
 | Game | Oxygen Not Included with the *Spaced Out!* DLC (base game also works; you'll just see one world) |
 | Mods | **ONI MCP Server** (OniMcp) ≥ 0.2.6, plus its prerequisite **Jlib** (keep Jlib above OniMcp in the mod list) |
-| Runtime | Node.js ≥ 20.10 (tested on 22) |
+| Runtime | Node.js ≥ 20.12 (tested on 22) |
 
 The dashboard was built against OniMcp **0.2.6** (protocol `2025-11-25`). OniMcp is pre-1.0 and may change its payloads;
 run `npm run probe` after updating the mod (see below).
 
-## Quick start
+## Deployment modes
+
+| Mode | Where the dashboard runs | Home PC runs | Use when |
+|---|---|---|---|
+| **Cloud (recommended)** | Vercel (`IC_MODE=cloud`) + Neon Postgres | `npm run agent` | One permanent URL, from any device. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Local | the home PC (`npm start`) | the same process | Second monitor at home; optionally reached privately over Tailscale ([docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md)) |
+
+## Quick start (local mode)
 
 ```bash
 npm install
@@ -44,7 +52,8 @@ npm run setup                   # choose the commander passphrase (required to s
 npm run build && npm start      # → http://localhost:3000 (bound to 127.0.0.1)
 ```
 
-For access from your phone, follow [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) (Tailscale; no port forwarding).
+For the cloud deployment, follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): `npm run cloud:secrets` → import the repo into
+Vercel with the Neon integration → `npm run agent` on the home PC.
 
 1. Launch the game with the **ONI MCP Server** mod enabled and load a colony. OniMcp listens on `http://localhost:8788/mcp/` by default.
 2. Open <http://localhost:3000> on your second monitor (1920×1080 is the design target; any size works). Use the browser's fullscreen (F11).
@@ -113,7 +122,8 @@ npm run typecheck
 - [docs/ONIMCP_CAPABILITIES.md](docs/ONIMCP_CAPABILITIES.md) — what OniMcp exposes, which resources are used, and how the multi-asteroid question was answered.
 - [docs/ALERTS.md](docs/ALERTS.md) — every rule, threshold and the hysteresis model.
 - [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — limitations, unsupported metrics, and future work (v2–v4).
-- [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) — Tailscale setup, notifications, watchdog, security model.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Vercel + Neon deployment, relay design and evaluation, home agent, security.
+- [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) — notifications, watchdog, and the Tailscale alternative for local mode.
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — commander/Claude model, instruction pipeline, objectives, modes, authorization levels.
 
 ## Safety

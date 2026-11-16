@@ -2,9 +2,9 @@
  * - Pages and static assets: network first, cached copy as fallback, so the app still opens (showing
  *   the last-known state from the device and a clear "home PC unreachable" banner) when offline.
  * - /api/*: never cached — live data and commands always go to the home PC. */
-const CACHE = "ic-shell-v1";
+const CACHE = "ic-shell-v2";
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/command", "/ops", "/alerts", "/settings", "/login", "/icon.svg"]).catch(() => {})));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/command", "/ops", "/alerts", "/settings", "/login", "/icon.svg", "/apple-touch-icon.png", "/icon-192.png"]).catch(() => {})));
   self.skipWaiting();
 });
 self.addEventListener("activate", (e) => {
@@ -17,7 +17,7 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     fetch(e.request)
       .then((r) => {
-        if (r.ok && (e.request.mode === "navigate" || url.pathname.startsWith("/_next/static/") || url.pathname === "/icon.svg")) {
+        if (r.ok && (e.request.mode === "navigate" || url.pathname.startsWith("/_next/static/") || /^\/(icon[^/]*|apple-touch-icon)\.(svg|png)$/.test(url.pathname))) {
           const copy = r.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }

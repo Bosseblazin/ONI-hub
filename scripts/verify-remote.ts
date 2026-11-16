@@ -1,7 +1,7 @@
 /**
- * Remote acceptance check — run from ANOTHER device on your tailnet (laptop at work, etc.):
+ * Remote acceptance check — run from ANOTHER device against the deployment (Vercel URL) or a local server:
  *
- *   IC_VERIFY_PASSPHRASE='your passphrase' npm run verify:remote -- --url https://homepc.your-tailnet.ts.net
+ *   IC_VERIFY_PASSPHRASE='your passphrase' npm run verify:remote -- --url https://<your-project>.vercel.app
  *
  * Sends one harmless information request ("verification ping") unless --instruction "..." is given.
  * Uses only the public HTTP API, exactly like the phone does.
@@ -60,68 +60,73 @@ async function main() {
   cookie = set.split(";")[0] ?? "";
   check("Sign in with the commander passphrase", lr.ok && cookie.startsWith("ic_session="), lr.ok ? "" : `HTTP ${lr.status} ${(await lr.text()).slice(0, 120)}`);
   if (!lr.ok) return finish();
-  check("Session cookie is HttpOnly + SameSite=Strict", /HttpOnly/i.test(set) && /SameSite=Strict/i.test(set), base.startsWith("https") ? (/Secure/i.test(set) ? "Secure" : "MISSING Secure on HTTPS") : "plain HTTP (use tailscale serve for HTTPS)");
+  check("Session cookie is HttpOnly + SameSite=Strict", /HttpOnly/i.test(set) && /SameSite=Strict/i.test(set), base.startsWith("https") ? (/Secure/i.test(set) ? "Secure" : "MISSING Secure on HTTPS") : "plain HTTP (local test only)");
   check("10d. Cross-origin command refused", (await post("/api/commands", { clientId: `c-${randomUUID()}`, type: "report.request", payload: {} }, { Origin: "https://evil.example" })).status === 403);
+
+  // Relay / home-agent link
+  type Relay = { mode: string; agentOnline: boolean; agentId: string | null; agentLastSeenAt: number | null; queued: number };
+  const st0 = (await (await req("/api/state")).json()) as { relay: Relay; dashboard: { connection: { simulated: boolean } } | null };
+  const cloud = st0.relay.mode === "cloud";
+  console.log(`        mode: ${st0.relay.mode}${cloud ? `, home agent ${st0.relay.agentId ?? "?"}` : ""}${st0.dashboard?.connection.simulated ? " — SIMULATED DATA (demo)" : ""}`);
+  check("11a. Home agent online", st0.relay.agentOnline, cloud ? `last sync ${st0.relay.agentLastSeenAt ? Math.round((Date.now() - st0.relay.agentLastSeenAt) / 1000) + " s ago" : "never"}` : "local mode");
 
   // 2-4. Submit, acknowledge, interpret
   const clientId = `c-verify-${randomUUID()}`;
   const s1 = await post("/api/commands", { clientId, type: "instruction", payload: { text }, clientCreatedAt: Date.now() });
-  const b1 = (await s1.json()) as { ack?: boolean; duplicate?: boolean; command?: { seq: number; receivedAt: number } };
-  check("2/3. Instruction submitted and acknowledged by the home PC", s1.status === 202 && b1.ack === true && !b1.duplicate, `seq ${b1.command?.seq}, received ${b1.command ? new Date(b1.command.receivedAt).toISOString() : "?"}`);
+  const b1 = (await s1.json()) as { ack?: boolean; duplicate?: boolean; seq?: number | null; command?: { queuedAt: number } };
+  check(`2. Instruction accepted by the ${cloud ? "cloud relay" : "home PC"}`, s1.status === 202 && b1.ack === true && !b1.duplicate, b1.command ? `queued ${new Date(b1.command.queuedAt).toISOString()}` : "");
 
-  // 9. Duplicate prevention (simulates a retry after reconnect)
+  // 9. Duplicate prevention (a retry after reconnect)
   const s2 = await post("/api/commands", { clientId, type: "instruction", payload: { text } });
-  const b2 = (await s2.json()) as { duplicate?: boolean; command?: { seq: number } };
-  check("9. Re-sent command recognised as duplicate (same seq)", b2.duplicate === true && b2.command?.seq === b1.command?.seq);
+  const b2 = (await s2.json()) as { duplicate?: boolean; command?: { queuedAt: number } };
+  check("9. Re-sent command recognised as duplicate", b2.duplicate === true && b2.command?.queuedAt === b1.command?.queuedAt);
 
-  type Cmd = { status: string; result: string | null; error: string | null };
-  let status = "received";
+  type Cmd = { homeStatus: string | null; deliveredAt: number | null; result: string | null; error: string | null };
   let cmd = null as Cmd | null;
-  for (let i = 0; i < 45 && (status === "received" || status === "processing"); i++) {
-    await sleep(2000);
+  let receivedAt: number | null = null;
+  for (let i = 0; i < 60; i++) {
+    await sleep(1500);
     const r = await req(`/api/commands?clientId=${clientId}`);
-    if (r.ok) {
-      const c = (await r.json()) as Cmd;
-      cmd = c;
-      status = c.status;
-    }
+    if (!r.ok) continue;
+    const c = (await r.json()) as Cmd;
+    cmd = c;
+    if (c.homeStatus && !receivedAt) receivedAt = Date.now();
+    if (c.homeStatus === "completed" || c.homeStatus === "failed" || c.homeStatus === "deferred") break;
   }
-  check("4. Instruction processed by the Operations Agent", status === "completed" || status === "deferred", status === "deferred" ? "queued: Claude is not configured/available on the home PC" : `${status} ${cmd?.result ?? cmd?.error ?? ""}`);
+  check("3. Home PC confirmed receipt", !!cmd?.homeStatus, cmd?.homeStatus ? `confirmed by the home agent${cloud && cmd.deliveredAt ? ` (delivered ${new Date(cmd.deliveredAt).toISOString()})` : ""}` : "not picked up — is `npm run agent` running?");
+  check(
+    "4. Instruction processed by the Operations Agent (home-confirmed)",
+    cmd?.homeStatus === "completed" || cmd?.homeStatus === "deferred",
+    cmd?.homeStatus === "deferred" ? "queued at home: Claude is not configured/available on the home PC" : `${cmd?.homeStatus ?? "none"} ${cmd?.result ?? cmd?.error ?? ""}`,
+  );
 
-  const ops = (await (await req("/api/ops")).json()) as {
+  // The reply arrives with the next snapshot from the home agent.
+  type Ops = {
     messages: Array<{ from: string; text: string; commandClientId: string | null; degraded?: boolean }>;
     objectives: unknown[];
     home: { lastObservationAt: number | null; gameProcess: string; oniMcp: string; claude: string };
     agent: { running: boolean };
   };
-  const reply = ops.messages.find((m) => m.commandClientId === clientId && m.from !== "commander");
-  check("4b. Claude/agent replied to the commander", !!reply, reply ? `${reply.from}${reply.degraded ? " (SIMULATED interpreter)" : ""}: ${reply.text.slice(0, 100).replace(/\n/g, " ")}…` : "no reply yet");
-  check("5/6. Objectives visible to the dashboard", Array.isArray(ops.objectives), `${ops.objectives.length} objective(s)`);
-  check("11. Home agent running", ops.agent.running, `OniMcp ${ops.home.oniMcp}, game process ${ops.home.gameProcess}, Claude ${ops.home.claude}`);
-
-  // Live stream
-  const sse = await req("/api/stream", { headers: { Accept: "text/event-stream" } });
-  let gotEvent = false;
-  if (sse.ok && sse.body) {
-    const reader = sse.body.getReader();
-    const t = setTimeout(() => void reader.cancel(), 8000);
-    let buf = "";
-    while (!gotEvent) {
-      const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
-      if (done) break;
-      buf += new TextDecoder().decode(value);
-      if (buf.includes("event: state")) gotEvent = true;
+  let ops: Ops | null = null;
+  let reply: Ops["messages"][number] | undefined;
+  for (let i = 0; i < 20 && !reply; i++) {
+    const r = await req("/api/ops");
+    if (r.ok) {
+      ops = (await r.json()) as Ops;
+      reply = ops.messages.find((m) => m.commandClientId === clientId && m.from !== "commander");
     }
-    clearTimeout(t);
-    void reader.cancel();
+    if (!reply) await sleep(1500);
   }
-  check("Live updates (SSE) received", gotEvent);
+  check("4b. Claude/agent replied to the commander", !!reply, reply ? `${reply.from}${reply.degraded ? " (SIMULATED interpreter)" : ""}: ${reply.text.slice(0, 100).replace(/\n/g, " ")}…` : "no reply yet");
+  if (!ops) return finish();
+  check("5/6. Objectives visible to the dashboard", Array.isArray(ops.objectives), `${ops.objectives.length} objective(s)`);
+  check("11b. Operations Agent running", ops.agent.running, `OniMcp ${ops.home.oniMcp}, game process ${ops.home.gameProcess}, Claude ${ops.home.claude}`);
 
-  // 7. Monitoring continues with no browser connected
+  // 7. Monitoring continues with no browser connected (this script is not a browser; nothing streams)
   const t0 = ops.home.lastObservationAt;
-  await sleep(15_000);
-  const ops2 = (await (await req("/api/ops")).json()) as { home: { lastObservationAt: number | null } };
-  check("7. Monitoring continues with no client streaming", !!t0 && !!ops2.home.lastObservationAt && ops2.home.lastObservationAt > t0, t0 ? "" : "no observations — is the game running with OniMcp?");
+  await sleep(cloud ? 25_000 : 15_000);
+  const ops2 = (await (await req("/api/ops")).json()) as Ops;
+  check("7. Monitoring continues with no browser open", !!t0 && !!ops2.home.lastObservationAt && ops2.home.lastObservationAt > t0, t0 ? "" : "no observations — is the game running with OniMcp?");
 
   await post("/api/auth/logout", {});
   return finish();

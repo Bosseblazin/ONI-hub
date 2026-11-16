@@ -497,6 +497,14 @@ export class Collector extends EventEmitter {
     return this.history.forWorld(worldId, sinceCycles);
   }
 
+  /** History rows recorded after wall-clock `t` (oldest first), for incremental upload to the cloud relay. */
+  historySince(t: number, limit = 2000) {
+    const all = this.history.all();
+    const out = [];
+    for (const s of all) if (s.t > t) out.push(s);
+    return out.slice(0, limit);
+  }
+
   acknowledge(id: string): boolean {
     const ok = this.alerts.acknowledge(id);
     if (ok) this.persistAndPublish();

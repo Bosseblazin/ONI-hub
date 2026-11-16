@@ -1,5 +1,4 @@
 import path from "node:path";
-import { Advisor } from "../advisor/advisor";
 import { AuthService } from "../auth/auth";
 import { Collector } from "../collector/collector";
 import { OperationsAgent } from "../ops/agent";
@@ -11,7 +10,6 @@ import { OpsStore } from "../ops/store";
 
 interface HomeServices {
   collector: Collector;
-  advisor: Advisor;
   auth: AuthService;
   store: OpsStore;
   agent: OperationsAgent;
@@ -55,10 +53,9 @@ export function home(): HomeServices {
     });
     collector.start();
     agent.start();
-    globalThis.__icHome = { collector, advisor: new Advisor(), auth, store, agent, screenshots, dataDir: dir };
+    globalThis.__icHome = { collector, auth, store, agent, screenshots, dataDir: dir };
   }
   return globalThis.__icHome;
 }
 
 export const getCollector = () => home().collector;
-export const getAdvisor = () => home().advisor;

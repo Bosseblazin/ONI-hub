@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MODES } from "@/lib/ops/objectives";
 import type { ActionProposal, Command, Investigation, Message, Objective, OperatingMode, OpsState, PriorityLevel, Recommendation } from "@/lib/ops/types";
+import type { RelayCommandStatus } from "@/lib/relay/protocol";
 import { PERMISSION_LABELS, PRIORITY_LABELS } from "@/lib/ops/types";
 import { age } from "@/lib/ui/format";
 import { useApp } from "./shell";
@@ -56,7 +57,7 @@ export function AiSummary({ ops, compact }: { ops: OpsState; compact?: boolean }
     <div className="space-y-2 px-3 py-2.5 text-xs">
       {!watching && (
         <div className="rounded border border-warn/60 bg-[#2a2210] px-2 py-1.5 text-[11px] text-warn">
-          Claude is <b>not observing the colony right now</b> — {live.link !== "live" ? "the home PC is unreachable from this device." : live.dashboard?.staleReason}
+          Claude is <b>not observing the colony right now</b> — {live.link === "home-offline" ? "the home agent is offline." : live.link !== "live" ? "this device cannot reach the service." : live.dashboard?.staleReason}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -207,9 +208,20 @@ const SUGGESTIONS = [
   "How is the colony doing?",
 ];
 
-function deliveryLabel(clientId: string | null, cmds: Command[], outbox: ReturnType<typeof useApp>["outbox"]): { text: string; color: string } | null {
+/**
+ * Honest delivery state across the whole chain: this device → service (cloud queue) → home PC → processed.
+ * "processed" only ever comes from the home agent's own report.
+ */
+function deliveryLabel(clientId: string | null, cmds: Command[], outbox: ReturnType<typeof useApp>["outbox"], relay: RelayCommandStatus[]): { text: string; color: string } | null {
   if (!clientId) return null;
   const c = cmds.find((x) => x.clientId === clientId);
+  const r = relay.find((x) => x.clientId === clientId);
+  if (!c && r) {
+    if (r.homeStatus && r.homeStatus !== "received") return { text: r.homeStatus === "completed" ? "processed (confirmed by home PC)" : r.homeStatus === "failed" ? `failed: ${r.error ?? ""}` : r.homeStatus, color: r.homeStatus === "completed" ? "var(--good)" : r.homeStatus === "failed" ? "var(--crit)" : "var(--warn)" };
+    if (r.homeStatus === "received") return { text: "received by home PC", color: "var(--muted)" };
+    if (r.deliveredAt) return { text: "delivered to home PC — awaiting confirmation", color: "var(--warn)" };
+    return { text: "queued in the cloud — waiting for the home PC", color: "var(--warn)" };
+  }
   if (c) {
     const m: Record<Command["status"], [string, string]> = {
       received: ["received by home PC", "var(--muted)"],
@@ -226,11 +238,17 @@ function deliveryLabel(clientId: string | null, cmds: Command[], outbox: ReturnT
 }
 
 export function ChatThread({ messages, commands }: { messages: Message[]; commands: Command[] }) {
-  const { outbox, send } = useApp();
+  const { outbox, send, live } = useApp();
+  const relay = live.relayCommands;
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
-  // Commander messages still in this device's outbox (not yet acknowledged) are shown optimistically.
-  const pending = outbox.filter((o) => o.type === "instruction" && !o.ackedAt && !messages.some((m) => m.commandClientId === o.clientId));
+  // Instructions not yet in the home agent's thread: still in this device's outbox, or waiting in the cloud queue
+  // (possibly sent from another device). Shown with their real delivery state.
+  const inThread = (id: string) => messages.some((m) => m.commandClientId === id);
+  const pending = [
+    ...outbox.filter((o) => o.type === "instruction" && !inThread(o.clientId) && !relay.some((r) => r.clientId === o.clientId)).map((o) => ({ clientId: o.clientId, text: String(o.payload.text ?? "") })),
+    ...relay.filter((r) => r.type === "instruction" && !inThread(r.clientId) && r.homeStatus === null).map((r) => ({ clientId: r.clientId, text: String(r.payload?.text ?? "") })),
+  ];
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [messages.length, pending.length]);
@@ -246,7 +264,7 @@ export function ChatThread({ messages, commands }: { messages: Message[]; comman
         {messages.length === 0 && pending.length === 0 && <p className="py-6 text-center text-xs text-muted">No messages yet. You are the commander — tell Claude what matters.</p>}
         {messages.map((m) => {
           const mine = m.from === "commander";
-          const dl = mine ? deliveryLabel(m.commandClientId, commands, outbox) : null;
+          const dl = mine ? deliveryLabel(m.commandClientId, commands, outbox, relay) : null;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[88%] rounded-lg px-3 py-2 text-[13px] leading-snug ${mine ? "bg-accent/15 text-ink" : m.from === "system" ? "border border-dashed border-line text-ink2" : "bg-panel2 text-ink"}`}>
@@ -261,14 +279,18 @@ export function ChatThread({ messages, commands }: { messages: Message[]; comman
             </div>
           );
         })}
-        {pending.map((o) => (
-          <div key={o.clientId} className="flex justify-end">
-            <div className="max-w-[88%] rounded-lg bg-accent/10 px-3 py-2 text-[13px] text-ink2">
-              <div className="whitespace-pre-wrap">{String(o.payload.text)}</div>
-              <div className="mt-1 text-[10px] text-warn">● {o.attempts ? `waiting for the home PC — retrying (${o.lastError ?? ""})` : "sending…"}</div>
+        {pending.map((o) => {
+          const ob = outbox.find((x) => x.clientId === o.clientId);
+          const dl = deliveryLabel(o.clientId, commands, outbox, relay) ?? (ob && !ob.ackedAt ? { text: ob.attempts ? `not sent yet — retrying (${ob.lastError ?? ""})` : "sending…", color: "var(--warn)" } : { text: "sent", color: "var(--muted)" });
+          return (
+            <div key={o.clientId} className="flex justify-end">
+              <div className="max-w-[88%] rounded-lg bg-accent/10 px-3 py-2 text-[13px] text-ink2">
+                <div className="whitespace-pre-wrap">{o.text}</div>
+                <div className="mt-1 text-[10px]" style={{ color: dl.color }}>● {dl.text}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={end} />
       </div>
       <div className="border-t border-line p-2">

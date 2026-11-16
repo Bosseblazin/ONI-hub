@@ -1,24 +1,26 @@
 import { readCookie, SESSION_COOKIE, sameOrigin } from "../auth/auth";
-import { home } from "./singleton";
+import { backend, type Principal } from "./backend";
 
-export interface Principal {
-  sessionId: string;
-  label: string;
-}
+export type { Principal };
 
 /**
- * Authenticate a request. Every API route except /api/health and /api/auth/* calls this.
- * `write` additionally enforces same-origin (CSRF) for state-changing requests.
+ * Authenticate a request (local or cloud backend). Every API route except /api/health, /api/auth/* and the
+ * HMAC-signed /api/agent/* routes calls this. `write` additionally enforces same-origin (CSRF).
  */
-export function guard(req: Request, opts: { write?: boolean } = {}): Principal | Response {
-  const auth = home().auth;
-  if (!auth.passphraseSet()) {
-    return Response.json({ error: "setup_required", message: "Remote access is not set up. Run `npm run setup` on the home PC." }, { status: 401 });
+export async function guard(req: Request, opts: { write?: boolean } = {}): Promise<Principal | Response> {
+  const b = backend();
+  if (await b.setupRequired()) {
+    return Response.json(
+      { error: "setup_required", message: b.mode === "cloud" ? "Sign-in is not configured: set IC_PASSPHRASE_HASH in the Vercel project." : "Remote access is not set up. Run `npm run setup` on the home PC." },
+      { status: 401 },
+    );
   }
-  const rec = auth.check(readCookie(req, SESSION_COOKIE));
-  if (!rec) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const p = await b.session(readCookie(req, SESSION_COOKIE));
+  if (!p) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (opts.write && !sameOrigin(req)) return Response.json({ error: "bad_origin" }, { status: 403 });
-  return { sessionId: rec.id, label: rec.label };
+  return p;
 }
 
 export const isResponse = (x: unknown): x is Response => x instanceof Response;
+
+export const noStore = { "Cache-Control": "no-store" };

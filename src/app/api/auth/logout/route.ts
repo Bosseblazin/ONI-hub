@@ -1,15 +1,15 @@
 import { clearCookie, readCookie, SESSION_COOKIE, sameOrigin } from "@/lib/auth/auth";
-import { home } from "@/lib/server/singleton";
+import { backend } from "@/lib/server/backend";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function POST(req: Request) {
+export async function POST(req: Request) {
   if (!sameOrigin(req)) return Response.json({ error: "bad_origin" }, { status: 403 });
   const tok = readCookie(req, SESSION_COOKIE);
-  const h = home();
-  const rec = h.auth.check(tok);
-  if (tok) h.auth.logout(tok);
-  if (rec) h.store.audit(rec.label, "auth.logout", { session: rec.id });
+  const b = backend();
+  const p = await b.session(tok);
+  if (tok) await b.logout(tok);
+  if (p) await b.auditEvent(p.label, "auth.logout", { session: p.sessionId });
   return Response.json({ ok: true }, { headers: { "Set-Cookie": clearCookie(req) } });
 }

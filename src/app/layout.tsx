@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Interplanetary Command",
   description: "Colony Operations and Intelligence System for Oxygen Not Included: Spaced Out!",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon-192.png", sizes: "192x192" }], apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }] },
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Command" },
   robots: { index: false, follow: false },
 };

@@ -1,5 +1,5 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
+import { hashPassphrase, lockoutMs, newPublicId, newToken, sha256hex, verifyPassphrase } from "./crypto";
 import path from "node:path";
 import { readJsonFile, writeJsonFileAtomic } from "../store/history";
 
@@ -15,14 +15,11 @@ import { readJsonFile, writeJsonFileAtomic } from "../store/history";
  */
 
 export const SESSION_COOKIE = "ic_session";
-const SESSION_TTL_MS = 30 * 86400_000;
-const MIN_PASSPHRASE = 12;
-const SCRYPT = { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
+export const SESSION_TTL_MS = 30 * 86400_000;
 
 interface PassFile {
-  v: 1;
-  salt: string;
-  hash: string;
+  v: 2;
+  encoded: string;
   createdAt: number;
 }
 
@@ -44,7 +41,7 @@ export interface SessionInfo {
   current: boolean;
 }
 
-const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+const sha = sha256hex;
 
 export class AuthService {
   private dir: string;
@@ -67,10 +64,7 @@ export class AuthService {
   }
 
   setPassphrase(pass: string): void {
-    if (pass.length < MIN_PASSPHRASE) throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE} characters.`);
-    const salt = randomBytes(16);
-    const hash = scryptSync(pass.normalize("NFKC"), salt, 64, SCRYPT);
-    writeJsonFileAtomic(this.passFile(), { v: 1, salt: salt.toString("hex"), hash: hash.toString("hex"), createdAt: Date.now() } satisfies PassFile);
+    writeJsonFileAtomic(this.passFile(), { v: 2, encoded: hashPassphrase(pass), createdAt: Date.now() } satisfies PassFile);
     try {
       fs.chmodSync(this.passFile(), 0o600);
     } catch {
@@ -80,11 +74,11 @@ export class AuthService {
   }
 
   private verify(pass: string): boolean {
-    const f = readJsonFile<PassFile>(this.passFile());
+    const f = readJsonFile<Partial<PassFile> & { salt?: string; hash?: string }>(this.passFile());
     if (!f) return false;
-    const got = scryptSync(pass.normalize("NFKC"), Buffer.from(f.salt, "hex"), 64, SCRYPT);
-    const want = Buffer.from(f.hash, "hex");
-    return got.length === want.length && timingSafeEqual(got, want);
+    // v1 files stored salt and hash separately (same scrypt parameters).
+    const encoded = f.encoded ?? (f.salt && f.hash ? `scrypt$32768$8$1$${f.salt}$${f.hash}` : null);
+    return verifyPassphrase(pass, encoded);
   }
 
   /** Remaining lock time in ms for a client key (0 = may attempt). */
@@ -104,14 +98,14 @@ export class AuthService {
       const f = this.failures.get(clientKey) ?? { count: 0, lockedUntil: 0 };
       f.count++;
       // 3 free attempts, then 30 s, 1 min, 2 min, ... capped at 1 h.
-      if (f.count >= 3) f.lockedUntil = now + Math.min(3600_000, 30_000 * 2 ** (f.count - 3));
+      if (f.count >= 3) f.lockedUntil = now + lockoutMs(f.count);
       this.failures.set(clientKey, f);
       this.globalFailures.push(now);
       return { ok: false, error: "Incorrect passphrase." };
     }
     this.failures.delete(clientKey);
-    const token = randomBytes(32).toString("base64url");
-    const rec: SessionRec = { id: randomBytes(6).toString("hex"), tokenHash: sha(token), label: label.slice(0, 80) || "device", createdAt: now, lastSeenAt: now, expiresAt: now + SESSION_TTL_MS };
+    const token = newToken();
+    const rec: SessionRec = { id: newPublicId(), tokenHash: sha(token), label: label.slice(0, 80) || "device", createdAt: now, lastSeenAt: now, expiresAt: now + SESSION_TTL_MS };
     this.sessions.push(rec);
     this.persist();
     return { ok: true, token, session: { ...this.info(rec), current: true } };

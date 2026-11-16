@@ -1,11 +1,12 @@
-import { guard, isResponse } from "@/lib/server/guard";
-import { home } from "@/lib/server/singleton";
+import { backend } from "@/lib/server/backend";
+import { guard, isResponse, noStore } from "@/lib/server/guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function GET(req: Request) {
-  const g = guard(req);
+export async function GET(req: Request) {
+  const g = await guard(req);
   if (isResponse(g)) return g;
-  return Response.json(home().agent.getState(), { headers: { "Cache-Control": "no-store" } });
+  const s = await backend().state();
+  return Response.json(s.ops ? { ...s.ops, relay: s.relay } : { error: "no data from the home agent yet", relay: s.relay }, { status: s.ops ? 200 : 503, headers: noStore });
 }

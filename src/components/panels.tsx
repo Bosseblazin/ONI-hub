@@ -110,7 +110,7 @@ export function Header({ s, now, linkUp }: { s: DashboardState | null; now: numb
   const crit = active.filter((a) => a.severity === "CRITICAL").length;
   const warn = active.filter((a) => a.severity === "WARNING").length;
   const asteroids = snap?.worlds.filter((w) => w.kind === "asteroid" && w.settled).length ?? null;
-  const overall: Severity | "OK" | "STALE" = !s || s.stale ? "STALE" : crit ? "CRITICAL" : warn ? "WARNING" : "OK";
+  const overall: Severity | "OK" | "STALE" = !s || s.stale || !linkUp ? "STALE" : crit ? "CRITICAL" : warn ? "WARNING" : "OK";
   return (
     <header className="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-line bg-panel px-5 py-3">
       <div className="mr-2">
@@ -130,8 +130,8 @@ export function Header({ s, now, linkUp }: { s: DashboardState | null; now: numb
         <Stat label="Last update" value={clock(s?.lastUpdate ?? null)} sub={age(s?.lastUpdate ?? null, now)} />
       </div>
       <div className="ml-auto flex items-center gap-3">
-        {!linkUp && <span className="text-[10px] text-warn">dashboard server unreachable — retrying</span>}
-        {s && <ConnDot c={s.connection} stale={s.stale} />}
+        {!linkUp && s && <span className="text-[10px] text-warn">no live link to the home PC — last known data</span>}
+        {s && <ConnDot c={s.connection} stale={s.stale || !linkUp} />}
       </div>
     </header>
   );

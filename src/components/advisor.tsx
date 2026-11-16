@@ -1,6 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import type { AdvisorStatus } from "@/lib/advisor/advisor";
+import { useState } from "react";
+import { useApp } from "./shell";
 
 /** Minimal Markdown → React (headings, bold, lists, paragraphs). Never injects HTML. */
 function inline(t: string, key: string) {
@@ -40,63 +40,49 @@ export function Markdown({ src }: { src: string }) {
   return <div className="space-y-1.5 text-xs leading-relaxed text-ink2">{out}</div>;
 }
 
+/**
+ * Status briefings from Claude. Requests go through the command queue to the home agent (where Claude
+ * runs); the panel shows the latest report and the request's real delivery state.
+ */
 export function AdvisorPanel() {
-  const [st, setSt] = useState<(AdvisorStatus & { error?: string }) | null>(null);
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/advisor", { cache: "no-store" });
-      setSt((await r.json()) as AdvisorStatus);
-    } catch { /* ignore */ }
-  }, []);
-  useEffect(() => {
-    void load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
-  }, [load]);
-  const run = async () => {
-    setBusy(true);
-    try {
-      const r = await fetch("/api/advisor", { method: "POST" });
-      setSt((await r.json()) as AdvisorStatus & { error?: string });
-    } finally {
-      setBusy(false);
-    }
-  };
-  const last = st?.last ?? null;
+  const { live, send, outbox } = useApp();
+  const [reqId, setReqId] = useState<string | null>(null);
+  const ops = live.ops;
+  const last = ops?.messages.filter((m) => m.kind === "report").pop() ?? null;
+  const req = reqId ? live.relayCommands.find((c) => c.clientId === reqId) ?? null : null;
+  const homeCmd = reqId ? ops?.commands.find((c) => c.clientId === reqId) ?? null : null;
+  const pendingLocal = reqId ? outbox.some((o) => o.clientId === reqId && !o.ackedAt) : false;
+  const state = homeCmd?.status === "completed" || homeCmd?.status === "failed" ? null
+    : homeCmd ? "Claude is preparing the briefing on the home PC…"
+    : req?.deliveredAt ? "Delivered to the home PC…"
+    : req ? "Queued — waiting for the home PC to pick it up"
+    : pendingLocal ? "Sending…" : null;
+  const claude = ops?.agent.claudeAvailable;
   return (
     <section className="panel flex min-h-0 flex-col" aria-label="AI colony advisor">
       <div className="flex items-center justify-between border-b border-line px-3 py-2">
         <h2 className="panel-title">AI Colony Advisor</h2>
-        {st?.available ? (
-          <button
-            onClick={() => void run()}
-            disabled={busy || st.running || st.cooldownRemainingS > 0}
-            className="rounded border border-accent/60 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-accent hover:bg-accent/10 disabled:opacity-40"
-          >
-            {busy || st.running ? "ANALYSING…" : st.cooldownRemainingS > 0 ? `READY IN ${st.cooldownRemainingS}s` : "REQUEST BRIEFING"}
-          </button>
-        ) : (
-          <span className="text-[10px] text-muted">offline</span>
-        )}
+        <button
+          onClick={() => setReqId(send("report.request", {}))}
+          disabled={!!state}
+          className="rounded border border-accent/60 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-accent hover:bg-accent/10 disabled:opacity-40"
+        >
+          {state ? "WORKING…" : "REQUEST BRIEFING"}
+        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        {!st && <p className="text-xs text-muted">Loading…</p>}
-        {st && !st.available && (
-          <div className="space-y-2 text-xs text-muted">
-            <p>{st.reason}</p>
-            <p>The advisor receives a compact structured snapshot (no raw game data), runs only when you press the button, and is advisory only — it has no ability to act on the game. <a className="text-accent underline" href="/api/advisor?payload=1" target="_blank" rel="noreferrer">Preview the snapshot it would receive</a>.</p>
-          </div>
+        {state && <p className="mb-2 text-[11px] text-warn">● {state}</p>}
+        {homeCmd?.status === "failed" && <p className="mb-2 text-[11px] text-crit">Request failed: {homeCmd.error}</p>}
+        {!claude && !live.dashboard?.connection.simulated && (
+          <p className="mb-2 text-xs text-muted">Claude is not configured on the home PC (ANTHROPIC_API_KEY). Requests will wait until it is.</p>
         )}
-        {st?.available && "lastError" in st && st.lastError && <p className="mb-2 text-xs text-crit">{st.lastError}</p>}
-        {st?.available && !last && !busy && <p className="text-xs text-muted">No briefing yet. Briefings are generated on request from the current snapshot ({st.model}).</p>}
+        {!last && !state && <p className="text-xs text-muted">No briefing yet. Claude briefs from a structured snapshot of the colony and has no ability to act on the game.</p>}
         {last && (
           <>
             <div className="mb-2 text-[10px] text-muted">
-              Briefing for cycle {last.snapshotCycle ?? "?"} · {new Date(last.createdAt).toLocaleTimeString()} · {last.servedBy ?? last.model}
-              {last.simulated && <span className="text-[var(--s7)]"> · SIMULATED DATA</span>} · advisory only — no actions were taken
+              {new Date(last.at).toLocaleString()} · {last.degraded ? <span className="text-[var(--s7)]">SIMULATED — not Claude</span> : "Claude"} · advisory only — no actions were taken
             </div>
-            <Markdown src={last.markdown} />
+            <Markdown src={last.text} />
           </>
         )}
       </div>

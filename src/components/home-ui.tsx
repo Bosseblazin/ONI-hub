@@ -26,14 +26,30 @@ function Row({ label, value, ok, note }: { label: string; value: string; ok: boo
 export function HomeStatusPanel() {
   const { live, now } = useApp();
   const h = live.ops?.home;
-  const reachable = live.link === "live";
-  const stale = !reachable;
+  const r = live.relay;
+  const cloud = r?.mode === "cloud";
+  const serviceOk = live.link === "live" || live.link === "home-offline";
+  const homeOk = live.link === "live";
+  const asOf = homeOk ? "" : " (last known)";
   return (
     <Section title="Home PC & links" right={<span className="text-[10px]" style={{ color: watchState(live).color }}>{watchState(live).label}</span>}>
       <ul className="divide-y divide-line">
-        <Row label="This device → home PC" value={reachable ? "connected" : live.link === "device-offline" ? "device offline" : "unreachable"} ok={reachable} note={`last sync ${age(live.lastSyncAt, now)}`} />
-        <Row label="Home PC" value={reachable ? `online (${h?.hostname ?? "?"})` : "unknown"} ok={reachable ? true : null} note={h ? `agent up ${Math.round(h.uptimeSeconds / 60)} min${stale ? " (as of last sync)" : ""}` : undefined} />
-        <Row label="Oxygen Not Included" value={h?.gameProcess ?? "unknown"} ok={h ? (h.gameProcess === "unknown" ? null : h.gameProcess === "running") : null} note="process check on the home PC" />
+        <Row
+          label={cloud ? "This device → Interplanetary Command (cloud)" : "This device → home PC"}
+          value={serviceOk ? "connected" : live.link === "device-offline" ? "device offline" : "unreachable"}
+          ok={serviceOk}
+          note={`last response ${age(live.lastSyncAt, now)}`}
+        />
+        {cloud && (
+          <Row
+            label="Home agent → cloud relay"
+            value={r.agentOnline ? `online (${r.agentId ?? "?"})` : r.agentLastSeenAt ? "OFFLINE" : "never connected"}
+            ok={r.agentOnline}
+            note={`last sync ${age(r.agentLastSeenAt, now)} · ${r.queued} command(s) queued${r.agentVersion ? ` · agent v${r.agentVersion}` : ""}`}
+          />
+        )}
+        <Row label="Home PC" value={homeOk ? `online (${h?.hostname ?? "?"})` : "not confirmed"} ok={homeOk ? true : cloud && r && !r.agentOnline ? false : null} note={h ? `agent up ${Math.round(h.uptimeSeconds / 60)} min${asOf}` : undefined} />
+        <Row label="Oxygen Not Included" value={`${h?.gameProcess ?? "unknown"}${asOf}`} ok={h && homeOk ? (h.gameProcess === "unknown" ? null : h.gameProcess === "running") : null} note="process check on the home PC" />
         <Row label="OniMcp" value={h?.oniMcp ?? "unknown"} ok={h ? h.oniMcp === "connected" : null} />
         <Row label="Colony loaded" value={h ? (h.colonyLoaded ? "yes" : "no") : "unknown"} ok={h ? h.colonyLoaded : null} note={live.dashboard?.snapshot?.saveName ?? undefined} />
         <Row label="Claude service" value={h?.claude ?? "unknown"} ok={h ? (h.claude === "available" ? true : h.claude === "unconfigured" ? null : false) : null} note={live.ops?.agent.lastClaudeError ?? (h?.claude === "unconfigured" ? "set ANTHROPIC_API_KEY on the home PC" : undefined)} />

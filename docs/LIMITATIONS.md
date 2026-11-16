@@ -8,24 +8,33 @@
 | Live game connection | **Not verified from the build environment.** The game runs on the player's PC, which was not reachable. Run `npm run probe` with the game running to confirm. |
 | Game version / mod compatibility | Not exposed by OniMcp's read surface; the dashboard shows the OniMcp server name/version from `initialize`. OniMcp 0.2.6 targets the current ONI release (U-series) with Spaced Out!. |
 
-## Remote Commander — acceptance status
+## Remote Commander (cloud deployment) — acceptance status
 
-| # | Criterion | Simulator / this environment | Your real home PC |
+"Cloud architecture, here" means: production builds, the cloud server in `IC_MODE=cloud` on PGlite (the same SQL as
+Neon), `npm run agent` connected over signed outbound HTTP, the simulator as the game, and an emulated iPhone 13.
+
+| # | Criterion | Cloud architecture, here | Real Vercel + home PC |
 |---|---|---|---|
-| 1 | Dashboard reachable from a separate device | ✅ via the server's network address, plus an emulated iPhone (Playwright) | ⏳ run `npm run verify:remote` from a second tailnet device |
+| 1 | Reachable from any device | ✅ via the network address + emulated iPhone | ⏳ deploy, then `npm run verify:remote -- --url https://…vercel.app` |
 | 2 | Submit an instruction remotely | ✅ HTTP + phone UI | ⏳ |
-| 3 | Home PC receives it (ack + seq) | ✅ | ⏳ |
-| 4 | Claude interprets and acknowledges | ✅ pipeline, with a **scripted test double** and the labelled **simulated interpreter**. ❌ Not run against the real Claude API (no key here) | ⏳ needs `ANTHROPIC_API_KEY` |
-| 5–6 | Objectives update; dashboard shows them | ✅ (unrelated objectives untouched, invalid operations rejected) | ⏳ |
-| 7 | Monitoring continues with the browser closed | ✅ observations advance with no client connected | ⏳ |
-| 8 | Disconnections clearly reported | ✅ home server killed mid-session → HOME PC UNREACHABLE, status UNKNOWN | ⏳ |
-| 9 | No duplicate commands after reconnect | ✅ same clientId → same seq, processed once (also across restarts) | ⏳ |
-| 10 | Unauthorised users can't submit | ✅ no session → 401, wrong passphrase, lockout, cross-origin → 403 | ⏳ |
-| 11 | Existing monitoring and alerts still work | ✅ all prior tests pass | ⏳ |
+| 3 | Home PC receives it | ✅ queued → delivered → home-confirmed | ⏳ |
+| 4 | Claude interprets and acknowledges | ✅ pipeline, via the **scripted test double** and the labelled **simulated interpreter**. ❌ Not against the real Claude API (no key here) | ⏳ needs `ANTHROPIC_API_KEY` on the PC |
+| 5–6 | Objectives update and display | ✅ | ⏳ |
+| 7 | Monitoring continues with the browser closed | ✅ (and during a cloud outage) | ⏳ |
+| 8 | Online/offline and stale clearly reported | ✅ agent killed → HOME PC OFFLINE / UNKNOWN / STALE; cloud killed → SERVICE UNREACHABLE | ⏳ |
+| 9 | No duplicates after reconnect | ✅ order sent while the home PC was down, and while the cloud was down → each processed exactly once | ⏳ |
+| 10 | Unauthorised users can't submit; impostor agents rejected | ✅ 401 / 403 / lockout; wrong HMAC secret → nothing delivered | ⏳ |
+| 11 | Existing monitoring, alerts and local mode still work | ✅ 90 tests; local-mode acceptance rerun after the refactor | ⏳ |
+| — | Production refuses demo data | ✅ simulated syncs → HTTP 409 unless `IC_ALLOW_SIMULATED=1` | ⏳ |
 
-**Remote integration is not declared complete until the "real home PC" column passes.** The game PC was not reachable
-from the build environment, so Tailscale, Windows process detection, Windows screenshots, ntfy delivery and real
-Claude calls are implemented but **unverified**.
+**Not yet verified, because they need your accounts or your PC:**
+- the actual Vercel deployment;
+- Neon over the network (the SQL was exercised on PGlite);
+- the Windows home agent, process detection and screenshots;
+- ntfy delivery;
+- real Claude calls.
+
+The architecture is not declared complete until the right-hand column passes.
 
 ## Known limitations
 

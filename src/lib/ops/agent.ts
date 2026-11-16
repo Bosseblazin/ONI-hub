@@ -68,6 +68,12 @@ export class OperationsAgent {
   private lastClaudeError: string | null = null;
   private readonly d: Required<Omit<AgentDeps, "simulatedLlm" | "heartbeat" | "screenshots" | "authInfo">> & Pick<AgentDeps, "simulatedLlm" | "heartbeat" | "screenshots" | "authInfo">;
   private onState = (s: DashboardState) => void this.observe(s);
+  private relayInfo: (() => HomeStatus["relay"]) | null = null;
+
+  /** Let the relay client report its link status in HomeStatus. */
+  setRelayInfo(fn: () => HomeStatus["relay"]) {
+    this.relayInfo = fn;
+  }
 
   constructor(deps: AgentDeps) {
     this.d = { tickMs: 2000, ...deps } as typeof this.d;
@@ -691,6 +697,7 @@ export class OperationsAgent {
       lastHeartbeatAt: this.d.heartbeat?.lastOkAt ?? null,
       heartbeatConfigured: !!this.d.heartbeat?.configured(),
       remoteAccess: auth,
+      relay: this.relayInfo?.() ?? null,
       serverTime: now,
     };
   }

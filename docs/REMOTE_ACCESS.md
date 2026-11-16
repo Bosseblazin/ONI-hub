@@ -1,8 +1,13 @@
-# Remote access — commanding the colony from your phone
+# Remote access — notifications, watchdog, and the Tailscale alternative
 
-The home PC runs the game, OniMcp and Interplanetary Command (dashboard + Colony Operations Agent). Your phone talks to
-that home server over a **private Tailscale network**. Nothing is exposed to the public internet, no router port
-forwarding is needed, and OniMcp is never reachable from outside the PC.
+> **The recommended setup is now the Vercel deployment** — one permanent URL with no app needed on the phone. See
+> [DEPLOYMENT.md](DEPLOYMENT.md). This page still applies for **notifications** and the **offline watchdog**, which
+> work in both modes. It also documents **local mode over Tailscale**, a fully private alternative with no cloud
+> component.
+
+In local mode, the home PC runs the game, OniMcp and Interplanetary Command (dashboard + Colony Operations Agent).
+Your phone talks to that home server over a **private Tailscale network**. Nothing is exposed to the public internet,
+no router port forwarding is needed, and OniMcp is never reachable from outside the PC.
 
 ```
  Phone (Tailscale app) ──WireGuard──▶ Tailscale ◀──outbound── Home PC

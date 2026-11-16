@@ -1,12 +1,13 @@
-import { guard, isResponse } from "@/lib/server/guard";
-import { home } from "@/lib/server/singleton";
+import { backend } from "@/lib/server/backend";
+import { guard, isResponse, noStore } from "@/lib/server/guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 15;
 
-export function GET(req: Request) {
-  const g = guard(req);
+/** Live state: {dashboard, ops, relay, relayCommands}. Polled by the browser. */
+export async function GET(req: Request) {
+  const g = await guard(req);
   if (isResponse(g)) return g;
-  const h = home();
-  return Response.json({ dashboard: h.collector.getState(), ops: h.agent.getState() }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json(await backend().state(), { headers: noStore });
 }

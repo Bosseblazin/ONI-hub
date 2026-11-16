@@ -33,8 +33,18 @@ const TABS = [
 /** Is the colony being watched right now? Honest, combined view of every link in the chain. */
 export function watchState(l: LiveData): { ok: boolean; label: string; detail: string; color: string } {
   if (l.link === "device-offline") return { ok: false, label: "THIS DEVICE IS OFFLINE", detail: "Showing the last state this device received.", color: "var(--warn)" };
-  if (l.link === "home-unreachable") return { ok: false, label: "HOME PC UNREACHABLE", detail: "The home PC (or its network/Tailscale) is not answering. The colony is not being monitored from here; values are last known.", color: "var(--crit)" };
-  if (l.link === "connecting" || !l.dashboard) return { ok: false, label: "CONNECTING", detail: "Reaching the home PC…", color: "var(--warn)" };
+  if (l.link === "service-unreachable")
+    return { ok: false, label: "SERVICE UNREACHABLE", detail: "This device cannot reach Interplanetary Command. The home agent may still be monitoring; values shown are the last this device received.", color: "var(--crit)" };
+  if (l.link === "home-offline") {
+    const seen = l.relay?.agentLastSeenAt;
+    return {
+      ok: false,
+      label: "HOME PC OFFLINE",
+      detail: `The home agent ${seen ? `last reported ${Math.round((Date.now() - seen) / 60_000)} min ago` : "has never connected"}. The colony is NOT being monitored and Claude is not managing it. Values are last known; commands will wait in the queue until the home PC reconnects.`,
+      color: "var(--crit)",
+    };
+  }
+  if (l.link === "connecting" || !l.dashboard) return { ok: false, label: "CONNECTING", detail: "Reaching Interplanetary Command…", color: "var(--warn)" };
   const d = l.dashboard;
   if (d.connection.state === "disconnected") return { ok: false, label: "GAME LINK DOWN", detail: "The home PC is online but cannot reach OniMcp. Is the game running?", color: "var(--crit)" };
   if (d.connection.state === "game-not-loaded") return { ok: false, label: "NO COLONY LOADED", detail: "The game is at the main menu.", color: "var(--warn)" };
@@ -43,12 +53,13 @@ export function watchState(l: LiveData): { ok: boolean; label: string; detail: s
 }
 
 function LinkBanner({ live, now }: { live: LiveData; now: number }) {
-  if (live.link !== "home-unreachable" && live.link !== "device-offline") return null;
+  if (live.link !== "home-offline" && live.link !== "service-unreachable" && live.link !== "device-offline") return null;
   const w = watchState(live);
+  const dataAt = live.link === "home-offline" ? live.relay?.snapshotAt ?? null : live.lastSyncAt;
   return (
     <div role="alert" className="border-b px-4 py-2 text-center text-xs" style={{ borderColor: w.color, background: "#2a1214", color: w.color }}>
-      <b className="tracking-[0.15em]">{w.label}</b> — {w.detail} Last sync {clock(live.lastSyncAt)} ({age(live.lastSyncAt, now)}).
-      {live.link === "home-unreachable" && <span className="block text-[11px] text-ink2">If only this phone lost its connection, the home agent may still be running and monitoring.</span>}
+      <b className="tracking-[0.15em]">{w.label}</b> — {w.detail} Data from {clock(dataAt)} ({age(dataAt, now)}).
+      {live.link === "home-offline" && (live.relay?.queued ?? 0) > 0 && <span className="block text-[11px] text-ink2">{live.relay!.queued} command(s) waiting for the home PC.</span>}
     </div>
   );
 }
@@ -64,12 +75,18 @@ function MobileTop({ live, now }: { live: LiveData; now: number }) {
         <div className="min-w-0">
           <div className="truncate text-[13px] font-bold tracking-[0.22em]">INTERPLANETARY COMMAND</div>
           <div className="num truncate text-[10px] text-muted">
-            {d?.snapshot ? `C${d.snapshot.time?.cycle ?? "?"} · ${d.snapshot.totalPopulation ?? "?"} dupes${d.snapshot.time?.paused ? " · PAUSED" : ""}` : "—"} · sync {age(live.lastSyncAt, now)}
+            {d?.snapshot ? `C${d.snapshot.time?.cycle ?? "?"} · ${d.snapshot.totalPopulation ?? "?"} dupes${d.snapshot.time?.paused ? " · PAUSED" : ""}` : "—"} · {live.relay?.mode === "cloud" ? `home ${age(live.relay.agentLastSeenAt, now)}` : `sync ${age(live.lastSyncAt, now)}`}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {crit > 0 && <SevBadge sev="CRITICAL" small />}
-          {!crit && warn > 0 && <SevBadge sev="WARNING" small />}
+          {live.link !== "live" && d ? (
+            <SevBadge sev="STALE" small />
+          ) : (
+            <>
+              {crit > 0 && <SevBadge sev="CRITICAL" small />}
+              {!crit && warn > 0 && <SevBadge sev="WARNING" small />}
+            </>
+          )}
           <span className={`h-2.5 w-2.5 rounded-full ${w.ok ? "pulse" : ""}`} style={{ background: w.color }} title={w.label} aria-label={w.label} />
         </div>
       </div>
