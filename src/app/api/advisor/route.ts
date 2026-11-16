@@ -1,19 +1,22 @@
 import { buildAdvisorPayload } from "@/lib/advisor/advisor";
+import { guard, isResponse } from "@/lib/server/guard";
 import { getAdvisor, getCollector } from "@/lib/server/singleton";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Advisor status, last report, and (with ?payload=1) the exact snapshot that would be sent. */
 export function GET(req: Request) {
+  const g = guard(req);
+  if (isResponse(g)) return g;
   const u = new URL(req.url);
   const body: Record<string, unknown> = { ...getAdvisor().status() };
   if (u.searchParams.get("payload")) body.payload = buildAdvisorPayload(getCollector().getState());
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }
 
-/** Request a new briefing. Rate-limited server-side (90 s cooldown). */
-export async function POST() {
+export async function POST(req: Request) {
+  const g = guard(req, { write: true });
+  if (isResponse(g)) return g;
   const adv = getAdvisor();
   const st = adv.status();
   if (!st.available) return Response.json(st, { status: 503 });

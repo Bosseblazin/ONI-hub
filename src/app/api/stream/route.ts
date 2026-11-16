@@ -1,41 +1,52 @@
-import { getCollector } from "@/lib/server/singleton";
-import type { DashboardState } from "@/lib/model/types";
+import { readCookie, SESSION_COOKIE } from "@/lib/auth/auth";
+import { guard, isResponse } from "@/lib/server/guard";
+import { home } from "@/lib/server/singleton";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Server-Sent Events: pushes the full DashboardState after every poll. */
+/** Server-Sent Events: {dashboard, ops} after every poll and every 5 s. Requires a session. */
 export function GET(req: Request) {
-  const collector = getCollector();
+  const g = guard(req);
+  if (isResponse(g)) return g;
+  const h = home();
   const enc = new TextEncoder();
   let cleanup = () => {};
   const stream = new ReadableStream<Uint8Array>({
     start(ctrl) {
-      const send = (s: DashboardState) => {
+      let last = 0;
+      const send = () => {
+        const now = Date.now();
+        if (now - last < 400) return; // coalesce bursts
+        last = now;
         try {
-          ctrl.enqueue(enc.encode(`event: state\ndata: ${JSON.stringify(s)}\n\n`));
+          // Re-check the session so a revoked device stops receiving data.
+          if (!h.auth.check(readCookie(req, SESSION_COOKIE))) {
+            ctrl.enqueue(enc.encode(`event: auth\ndata: {"error":"unauthorized"}\n\n`));
+            cleanup();
+            ctrl.close();
+            return;
+          }
+          ctrl.enqueue(enc.encode(`event: state\ndata: ${JSON.stringify({ dashboard: h.collector.getState(), ops: h.agent.getState() })}\n\n`));
         } catch {
           cleanup();
         }
       };
-      send(collector.getState());
-      collector.on("state", send);
-      // Re-send every 5s even without a poll so the client sees staleness age move.
-      const ka = setInterval(() => send(collector.getState()), 5000);
+      send();
+      h.collector.on("state", send);
+      const ka = setInterval(send, 5000);
       cleanup = () => {
         clearInterval(ka);
-        collector.off("state", send);
+        h.collector.off("state", send);
       };
       req.signal.addEventListener("abort", () => {
         cleanup();
-        try { ctrl.close(); } catch { /* already closed */ }
+        try { ctrl.close(); } catch { /* closed */ }
       });
     },
     cancel() {
       cleanup();
     },
   });
-  return new Response(stream, {
-    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store, no-transform", Connection: "keep-alive" },
-  });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
 }
